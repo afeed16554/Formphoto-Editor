@@ -1983,7 +1983,24 @@ class FormPhotoProStudio {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
+declare global {
+  interface Window {
+    __FORMPHOTO_MOUNTED__?: boolean;
+    __FORMPHOTO_BUNDLE_LOADING__?: boolean;
+    __loadStaticBundle?: () => void;
+  }
+}
+
+function bootstrapFormPhotoApp(): void {
+  if (window.__FORMPHOTO_MOUNTED__) return;
+  window.__FORMPHOTO_MOUNTED__ = true;
   const app = new FormPhotoProStudio();
   app.init();
-});
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', bootstrapFormPhotoApp);
+} else {
+  bootstrapFormPhotoApp();
+}
+

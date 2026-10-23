@@ -65,6 +65,28 @@
   </head>
   <body class="min-h-screen flex flex-col selection:bg-sky-500 selection:text-black antialiased">
     <div id="root" class="min-h-screen flex flex-col w-full"></div>
-    <script type="module" src="./src/index.ts"></script>
+    <script>
+      window.__loadStaticBundle = function () {
+        if (window.__FORMPHOTO_MOUNTED__ || window.__FORMPHOTO_BUNDLE_LOADING__) return;
+        window.__FORMPHOTO_BUNDLE_LOADING__ = true;
+        var s = document.createElement('script');
+        s.type = 'module';
+        s.src = './app.bundle.js';
+        document.body.appendChild(s);
+      };
+      window.addEventListener('DOMContentLoaded', function () {
+        setTimeout(function () {
+          var root = document.getElementById('root');
+          if (!window.__FORMPHOTO_MOUNTED__ && (!root || root.children.length === 0)) {
+            window.__loadStaticBundle();
+          }
+        }, 60);
+      });
+    </script>
+    <script
+      type="module"
+      src="./src/index.ts"
+      onerror="window.__loadStaticBundle && window.__loadStaticBundle()"
+    ></script>
   </body>
 </html>
