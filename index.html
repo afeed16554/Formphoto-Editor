@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en" class="theme-oled" data-theme="oled">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <title>FormPhoto Pro — Admission Photo &amp; Signature Studio</title>
+    <meta
+      name="description"
+      content="100% on-device admission photo and signature resizer, cropper, native background remover, and exact KB compressor for BUET, Medical, DU, GST, and global portals."
+    />
+    <meta
+      property="og:title"
+      content="FormPhoto Pro — Admission Photo &amp; Signature Studio"
+    />
+    <meta
+      property="og:description"
+      content="100% on-device admission photo and signature resizer, cropper, native background remover, and exact KB compressor."
+    />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+              display: ['"Space Grotesk"', 'sans-serif'],
+              mono: ['"JetBrains Mono"', 'monospace'],
+            },
+            colors: {
+              'm3-bg': 'var(--m3-bg)',
+              'm3-surface': 'var(--m3-surface)',
+              'm3-surface-1': 'var(--m3-surface-1)',
+              'm3-surface-2': 'var(--m3-surface-2)',
+              'm3-surface-3': 'var(--m3-surface-3)',
+              'm3-primary': 'var(--m3-primary)',
+              'm3-on-primary': 'var(--m3-on-primary)',
+              'm3-primary-container': 'var(--m3-primary-container)',
+              'm3-on-primary-container': 'var(--m3-on-primary-container)',
+              'm3-secondary-container': 'var(--m3-secondary-container)',
+              'm3-on-secondary-container': 'var(--m3-on-secondary-container)',
+              'm3-tertiary-container': 'var(--m3-tertiary-container)',
+              'm3-on-tertiary-container': 'var(--m3-on-tertiary-container)',
+              'm3-text': 'var(--m3-text)',
+              'm3-text-muted': 'var(--m3-text-muted)',
+              'm3-outline': 'var(--m3-outline)',
+              'm3-outline-variant': 'var(--m3-outline-variant)',
+            },
+          },
+        },
+      };
+    </script>
+    <link rel="stylesheet" href="./src/index.css" />
+  </head>
+  <body class="min-h-screen flex flex-col selection:bg-sky-500 selection:text-black antialiased">
+    <div id="root" class="min-h-screen flex flex-col w-full"></div>
+    <script type="module" src="./src/index.ts"></script>
+  </body>
+</html>

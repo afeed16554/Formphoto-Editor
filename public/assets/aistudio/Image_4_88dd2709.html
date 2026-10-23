@@ -1,0 +1,749 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>FormPhoto Pro • Precision Admission Studio</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        background-color: #080d1a;
+        color: #e2e8f0;
+      }
+      body { overscroll-behavior: none; }
+    }
+    ::-webkit-scrollbar { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.2); border-radius: 9999px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(148, 163, 184, 0.4); }
+  </style>
+</head>
+<body class="bg-[#080d1a] font-['Inter'] text-[13px] text-slate-200 antialiased overflow-x-hidden selection:bg-indigo-500/30 selection:text-indigo-200">
+<!-- TOP NAVIGATION HEADER -->
+<header class="fixed top-0 left-0 right-0 z-50 h-14 bg-[#0a1020]/80 backdrop-blur-xl border-b border-slate-800/80 px-4 flex items-center justify-between">
+<!-- Brand & Workspace breadcrumb -->
+<div class="flex items-center gap-5">
+<div class="flex items-center gap-2.5">
+<div class="w-8 h-8 rounded-lg bg-gradient-to-tr from-indigo-600 via-indigo-500 to-cyan-400 p-[1px] shadow-lg shadow-indigo-500/20 flex items-center justify-center">
+<div class="w-full h-full bg-[#0b1224] rounded-[7px] flex items-center justify-center">
+<span class="material-symbols-outlined text-transparent bg-clip-text bg-gradient-to-tr from-indigo-400 to-cyan-300 text-[19px]">crop_free</span>
+</div>
+</div>
+<div class="flex flex-col">
+<span class="font-semibold tracking-tight text-white text-[14px] flex items-center gap-1.5">
+            FormPhoto <span class="text-cyan-400 text-[11px] font-mono tracking-widest uppercase px-1.5 py-0.5 rounded-full bg-cyan-500/10 border border-cyan-500/20">Studio Pro</span>
+</span>
+</div>
+</div>
+<div class="hidden lg:flex items-center gap-2 text-slate-400 text-[11px] font-mono bg-slate-900/60 border border-slate-800/70 rounded-full px-3 py-1">
+<span class="material-symbols-outlined text-[14px] text-indigo-400">folder_open</span>
+<span>Admission Session 2025</span>
+<span class="text-slate-600">/</span>
+<span class="text-slate-200 font-medium">NEET · JEE · US Visa Core</span>
+</div>
+</div>
+<!-- Center Mode Switcher (Pill) -->
+<div class="flex items-center bg-slate-950/70 p-1 rounded-full border border-slate-800/90 shadow-inner">
+<button class="flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-medium text-[12px] shadow-sm transition-all duration-200" id="mode-photo-btn">
+<span class="material-symbols-outlined text-[15px]">person</span>
+<span>Passport Photo</span>
+</button>
+<button class="flex items-center gap-1.5 px-3.5 py-1 rounded-full text-slate-400 hover:text-slate-200 font-medium text-[12px] transition-all duration-200" id="mode-sig-btn">
+<span class="material-symbols-outlined text-[15px]">draw</span>
+<span>Signature (High Contrast)</span>
+</button>
+</div>
+<!-- Right Quick Actions & Status -->
+<div class="flex items-center gap-3">
+<div class="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-mono">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+<span>300 DPI Engine Ready</span>
+</div>
+<div class="relative hidden sm:block">
+<select aria-label="Photo format preset" class="bg-slate-900/80 text-slate-200 text-[11px] font-mono rounded-lg px-3 py-1.5 border border-slate-800 focus:outline-none focus:border-indigo-500 hover:border-slate-700 cursor-pointer pr-7 appearance-none transition-colors">
+<option>NEET / JEE 2025 (3.5×4.5 cm)</option>
+<option>US Visa (2×2 in / 600×600 px)</option>
+<option>Passport Standard (35×45 mm)</option>
+<option>Govt Signature (140×60 px / &lt;20KB)</option>
+<option>UPSC / State PSC (350×450 px)</option>
+</select>
+<span class="material-symbols-outlined pointer-events-none absolute right-2 top-2 text-[14px] text-slate-400">expand_more</span>
+</div>
+<button class="h-8 px-3.5 bg-gradient-to-r from-indigo-600 to-indigo-500 hover:from-indigo-500 hover:to-indigo-400 text-white text-[12px] font-medium rounded-lg shadow-sm shadow-indigo-600/30 transition-all flex items-center gap-1.5 active:scale-95" id="btn-quick-export">
+<span class="material-symbols-outlined text-[16px]">file_download</span>
+<span class="hidden md:inline">Export</span>
+</button>
+<img alt="User avatar" class="w-8 h-8 rounded-full object-cover ring-2 ring-indigo-500/30" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSdVex5hMBijPjfSBumogXm5lLAsA5WNelNE27ao9cRXwDoOGfZTgfbgs-ylzfFEbtvkxdsVPHkc10li2iimp6jyNaaKkHp1rbHaXUDs6ooipPDrRKoybFjwlld_dS9Ao7RYR-Pu9_8UMBg4LIZYuFGfbeJ7g-bx7FLk_pIlJGEL495xviRJ4HDvNvVvWFgKYyT_yHRYfaMl5nmrVQ2F10ErNMAh13xueC7SE28sbQh7x7NVmf6Uw27A"/>
+</div>
+</header>
+<!-- COLLAPSIBLE SLIM SIDEBAR (Compact Icon Bar for Maximum Screen Space) -->
+<aside class="fixed left-0 top-14 bottom-0 w-16 bg-[#0a1020]/60 backdrop-blur-md border-r border-slate-800/80 z-40 hidden md:flex flex-col items-center justify-between py-4">
+<div class="flex flex-col items-center gap-2">
+<button class="w-10 h-10 rounded-xl bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 flex items-center justify-center transition-all" title="Precision Studio">
+<span class="material-symbols-outlined text-[20px]">crop_free</span>
+</button>
+<button class="w-10 h-10 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center justify-center transition-all" title="Batch Document Resizer">
+<span class="material-symbols-outlined text-[20px]">collections</span>
+</button>
+<button class="w-10 h-10 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center justify-center transition-all" title="Compliance Ruleset Library">
+<span class="material-symbols-outlined text-[20px]">verified</span>
+</button>
+<button class="w-10 h-10 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 flex items-center justify-center transition-all" title="Export History">
+<span class="material-symbols-outlined text-[20px]">history</span>
+</button>
+</div>
+<div class="flex flex-col items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center text-slate-400 hover:text-slate-200 cursor-pointer" title="Settings">
+<span class="material-symbols-outlined text-[16px]">tune</span>
+</div>
+<div class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_#34d399]" title="ICAO Core Engine Online"></div>
+</div>
+</aside>
+<!-- MAIN APP WORKSPACE CONTAINER -->
+<div class="md:pl-16 pt-14 min-h-screen bg-[#080d1a]">
+<!-- SUBHEADER / PRESET TABS & COMPLIANCE BAR -->
+<div class="border-b border-slate-800/70 bg-[#0c1326]/60 backdrop-blur-md px-4 py-2.5 flex flex-wrap items-center justify-between gap-3">
+<!-- Preset Quick Pills -->
+<div class="flex items-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+<span class="text-[10px] font-mono text-slate-500 uppercase tracking-widest pr-1">Target Spec:</span>
+<button class="preset-pill px-3 py-1 rounded-full text-xs font-mono font-medium bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 flex items-center gap-1.5 shadow-sm whitespace-nowrap">
+<span class="w-1.5 h-1.5 rounded-full bg-cyan-400"></span>
+<span>NEET / JEE 2025</span>
+<span class="text-indigo-400/80 text-[10px]">3.5×4.5 cm (10–50 KB)</span>
+</button>
+<button class="preset-pill px-3 py-1 rounded-full text-xs font-mono text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 transition-all flex items-center gap-1.5 whitespace-nowrap">
+<span>US Visa / OCI</span>
+<span class="text-slate-500 text-[10px]">2×2 in · 600×600 px</span>
+</button>
+<button class="preset-pill px-3 py-1 rounded-full text-xs font-mono text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 transition-all flex items-center gap-1.5 whitespace-nowrap">
+<span>Passport Standard</span>
+<span class="text-slate-500 text-[10px]">35×45 mm</span>
+</button>
+<button class="preset-pill px-3 py-1 rounded-full text-xs font-mono text-slate-400 hover:text-slate-200 bg-slate-900/60 hover:bg-slate-800/60 border border-slate-800 transition-all flex items-center gap-1.5 whitespace-nowrap">
+<span>Govt Signature</span>
+<span class="text-slate-500 text-[10px]">140×60 px</span>
+</button>
+</div>
+<!-- Realtime Compliance Pill -->
+<div class="flex items-center gap-3 bg-slate-900/70 border border-emerald-500/30 px-3 py-1 rounded-full text-[11px] font-mono shadow-sm">
+<div class="flex items-center gap-1.5 text-emerald-400 font-medium">
+<span class="material-symbols-outlined text-[15px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+<span>100% Admission Compliant</span>
+</div>
+<div class="w-px h-3 bg-slate-700"></div>
+<div class="flex items-center gap-2 text-slate-400">
+<span>350×450 px</span>
+<span>·</span>
+<span>300 DPI</span>
+<span>·</span>
+<span class="text-emerald-400 font-semibold" id="top-badge-kb">42.8 KB</span>
+<span class="text-slate-500">(Max 50 KB)</span>
+</div>
+</div>
+</div>
+<!-- 3-COLUMN STUDIO LAYOUT -->
+<div class="p-3 lg:p-4 grid grid-cols-1 lg:grid-cols-12 gap-3.5 max-w-[1920px] mx-auto">
+<!-- LEFT PANEL: GEOMETRY, CROP & BIOMETRIC ANGLE (Col 3) -->
+<aside class="lg:col-span-3 flex flex-col gap-3">
+<!-- Target Geometry & Dimensions -->
+<div class="bg-[#0f172a]/70 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-4 shadow-xl">
+<div class="flex items-center justify-between mb-3.5">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px]">crop</span>
+</div>
+<div>
+<h3 class="font-semibold text-slate-100 text-[13px] leading-tight">Geometry &amp; Scale</h3>
+<p class="text-[10px] text-slate-400">Aspect locked 7:9 standard</p>
+</div>
+</div>
+<span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-cyan-500/15 text-cyan-300 border border-cyan-500/30">Locked</span>
+</div>
+<!-- Unit Selector -->
+<div class="grid grid-cols-4 gap-1 p-1 bg-slate-950/70 border border-slate-800/80 rounded-xl mb-3">
+<button class="py-1 rounded-lg bg-indigo-600 text-white font-mono text-[11px] font-medium shadow">px</button>
+<button class="py-1 rounded-lg text-slate-400 hover:text-slate-200 font-mono text-[11px]">mm</button>
+<button class="py-1 rounded-lg text-slate-400 hover:text-slate-200 font-mono text-[11px]">cm</button>
+<button class="py-1 rounded-lg text-slate-400 hover:text-slate-200 font-mono text-[11px]">in</button>
+</div>
+<!-- Dimensions Input Stepper -->
+<div class="grid grid-cols-2 gap-2.5 mb-3.5">
+<div class="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5 focus-within:border-indigo-500 transition-colors">
+<label class="text-[10px] font-mono text-slate-400 flex justify-between mb-1">
+<span>WIDTH (W)</span>
+<span class="text-slate-500">35 mm</span>
+</label>
+<div class="flex items-center justify-between">
+<input class="w-20 bg-transparent text-white font-mono font-semibold text-sm focus:outline-none" id="input-w" type="number" value="350"/>
+<span class="text-[11px] font-mono text-slate-500">px</span>
+</div>
+</div>
+<div class="bg-slate-900/60 border border-slate-800 rounded-xl p-2.5 focus-within:border-indigo-500 transition-colors">
+<label class="text-[10px] font-mono text-slate-400 flex justify-between mb-1">
+<span>HEIGHT (H)</span>
+<span class="text-slate-500">45 mm</span>
+</label>
+<div class="flex items-center justify-between">
+<input class="w-20 bg-transparent text-white font-mono font-semibold text-sm focus:outline-none" id="input-h" type="number" value="450"/>
+<span class="text-[11px] font-mono text-slate-500">px</span>
+</div>
+</div>
+</div>
+<!-- Aspect Ratio Presets -->
+<div class="mb-3.5">
+<div class="flex justify-between text-[11px] font-medium text-slate-400 mb-1.5">
+<span>Aspect Ratio Lock</span>
+<span class="text-indigo-400 font-mono">7:9</span>
+</div>
+<div class="grid grid-cols-5 gap-1 font-mono text-[11px]">
+<button class="py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-all">1:1</button>
+<button class="py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-all">3.5:4.5</button>
+<button class="py-1 rounded-lg bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 font-medium">7:9</button>
+<button class="py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-all">2:3</button>
+<button class="py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 transition-all">Free</button>
+</div>
+</div>
+<!-- Output DPI Selector -->
+<div class="flex items-center justify-between p-2 rounded-xl bg-slate-950/60 border border-slate-800/80">
+<div class="flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-slate-400">print</span>
+<span class="text-[11px] font-medium text-slate-300">Resolution DPI</span>
+</div>
+<div class="flex items-center bg-slate-900 p-0.5 rounded-lg border border-slate-800">
+<button class="px-2 py-0.5 rounded text-[10px] font-mono text-slate-400 hover:text-white">72</button>
+<button class="px-2.5 py-0.5 rounded text-[10px] font-mono font-medium bg-indigo-600 text-white shadow">300 DPI</button>
+</div>
+</div>
+</div>
+<!-- Biometric Angle, Leveling & Micro-Pan -->
+<div class="bg-[#0f172a]/70 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-4 shadow-xl">
+<div class="flex items-center justify-between mb-3.5">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg bg-cyan-500/10 border border-cyan-500/20 text-cyan-400 flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px]">screen_rotation</span>
+</div>
+<div>
+<h3 class="font-semibold text-slate-100 text-[13px] leading-tight">Alignment &amp; Angle</h3>
+<p class="text-[10px] text-slate-400">Eye-level horizontal calibration</p>
+</div>
+</div>
+<button class="text-[11px] font-mono text-cyan-400 hover:text-cyan-300 flex items-center gap-1 bg-cyan-500/10 hover:bg-cyan-500/20 border border-cyan-500/30 px-2 py-0.5 rounded-lg transition-all" id="btn-auto-center">
+<span class="material-symbols-outlined text-[13px]">auto_fix_high</span>
+<span>Auto Center</span>
+</button>
+</div>
+<!-- Level Rotation Angle Dial & Slider -->
+<div class="mb-3.5">
+<div class="flex justify-between items-center text-xs mb-1.5">
+<span class="text-slate-400">Tilt Adjustment</span>
+<span class="font-mono text-cyan-400 font-semibold text-[11px] bg-cyan-500/10 px-1.5 py-0.2 rounded" id="rot-val-display">+0.0°</span>
+</div>
+<div class="flex items-center gap-2">
+<button class="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors" id="rot-sub-1">-1°</button>
+<input class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400" id="rot-slider" max="15" min="-15" step="0.1" type="range" value="0"/>
+<button class="w-7 h-7 rounded-lg bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-white flex items-center justify-center text-xs transition-colors" id="rot-add-1">+1°</button>
+</div>
+</div>
+<!-- Zoom & Crop Scale -->
+<div class="mb-3.5">
+<div class="flex justify-between items-center text-xs mb-1.5">
+<span class="text-slate-400">Subject Zoom / Scale</span>
+<span class="font-mono text-indigo-400 font-semibold text-[11px] bg-indigo-500/10 px-1.5 py-0.2 rounded" id="scale-val-display">115%</span>
+</div>
+<input class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" id="scale-slider" max="200" min="80" type="range" value="115"/>
+</div>
+<!-- Micro Offset Scrubbers -->
+<div class="grid grid-cols-2 gap-2 mb-3">
+<div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-2 flex items-center justify-between">
+<span class="text-[11px] text-slate-400 font-mono">X-Offset</span>
+<div class="flex items-center gap-1.5 font-mono text-xs">
+<button class="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">-</button>
+<span class="text-slate-200 font-medium" id="x-offset-val">+12px</span>
+<button class="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">+</button>
+</div>
+</div>
+<div class="bg-slate-900/60 border border-slate-800/80 rounded-xl p-2 flex items-center justify-between">
+<span class="text-[11px] text-slate-400 font-mono">Y-Offset</span>
+<div class="flex items-center gap-1.5 font-mono text-xs">
+<button class="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">-</button>
+<span class="text-slate-200 font-medium" id="y-offset-val">-4px</span>
+<button class="w-5 h-5 rounded hover:bg-slate-800 text-slate-400 hover:text-white flex items-center justify-center">+</button>
+</div>
+</div>
+</div>
+<!-- Quick Action Buttons -->
+<div class="grid grid-cols-2 gap-2">
+<button class="py-1.5 px-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[14px]">flip</span>
+<span>Mirror Horizontal</span>
+</button>
+<button class="py-1.5 px-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[14px]">restart_alt</span>
+<span>Reset Alignment</span>
+</button>
+</div>
+</div>
+<!-- Biometric Compliance Mini Tip Card -->
+<div class="p-3 rounded-2xl bg-indigo-950/20 border border-indigo-500/20 text-slate-300 flex items-start gap-2.5">
+<span class="material-symbols-outlined text-indigo-400 text-[18px] shrink-0 mt-0.5">verified_user</span>
+<div class="text-[11px] leading-relaxed">
+<span class="font-semibold text-indigo-300">ICAO 9303 Core Rules:</span> Crown-to-chin fill must stay between <span class="text-white font-medium">70% and 80%</span> of image height with eyes fully level.
+          </div>
+</div>
+</aside>
+<!-- CENTER STAGE: DUAL CANVAS / COMPARISON VIEWPORT (Col 6) -->
+<main class="lg:col-span-6 flex flex-col gap-3">
+<!-- Minimal Floating Canvas Topbar -->
+<div class="bg-[#0f172a]/70 backdrop-blur-xl border border-slate-800/90 rounded-2xl px-3.5 py-2 flex flex-wrap items-center justify-between gap-2 shadow-lg">
+<!-- View Modes Pill -->
+<div class="flex items-center bg-slate-950/80 p-0.5 rounded-xl border border-slate-800/90">
+<button class="px-3 py-1 rounded-lg bg-indigo-600 text-white font-medium text-[11px] flex items-center gap-1 shadow transition-all" id="view-mode-dual">
+<span class="material-symbols-outlined text-[14px]">view_column</span>
+<span>Dual Comparison</span>
+</button>
+<button class="px-3 py-1 rounded-lg text-slate-400 hover:text-slate-200 text-[11px] flex items-center gap-1 transition-all" id="view-mode-single">
+<span class="material-symbols-outlined text-[14px]">filter_center_focus</span>
+<span>Output Only</span>
+</button>
+<button class="px-3 py-1 rounded-lg text-slate-400 hover:text-slate-200 text-[11px] flex items-center gap-1 transition-all" id="view-mode-split">
+<span class="material-symbols-outlined text-[14px]">compare</span>
+<span>Split Wipe</span>
+</button>
+</div>
+<!-- Canvas Zoom & Guides HUD -->
+<div class="flex items-center gap-2">
+<div class="flex items-center bg-slate-950/70 border border-slate-800/80 rounded-xl px-1.5 py-0.5">
+<button class="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white transition-colors" id="btn-zoom-out">
+<span class="material-symbols-outlined text-[14px]">remove</span>
+</button>
+<span class="font-mono text-[11px] text-slate-300 px-1.5 select-none" id="canvas-zoom-txt">100%</span>
+<button class="w-6 h-6 rounded flex items-center justify-center text-slate-400 hover:text-white transition-colors" id="btn-zoom-in">
+<span class="material-symbols-outlined text-[14px]">add</span>
+</button>
+</div>
+<button class="h-7 px-2.5 rounded-xl bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-white text-[11px] font-mono flex items-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[13px]">crop_free</span>
+<span>Fit</span>
+</button>
+<!-- Guide Toggle Pill -->
+<button class="h-7 px-2.5 rounded-xl bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-[11px] flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">grid_3x3</span>
+<span class="hidden sm:inline">Biometric Grid</span>
+</button>
+</div>
+</div>
+<!-- CANVAS WORKSPACE VIEWPORT -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3.5 flex-1 min-h-[510px]" id="dual-canvas-container">
+<!-- LEFT CANVAS: ORIGINAL UNPROCESSED PHOTO -->
+<div class="relative bg-[#0b1120] border border-slate-800/90 rounded-2xl overflow-hidden flex flex-col shadow-2xl group">
+<!-- Top Tag Pill -->
+<div class="absolute top-3 left-3 z-30 flex items-center gap-1.5 bg-slate-950/80 backdrop-blur-md border border-slate-800 px-2.5 py-1 rounded-full text-slate-300 text-[10px] font-mono shadow-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+<span class="font-medium text-slate-200">Raw Input: 4032×3024</span>
+<span class="text-slate-500">· 3.4 MB</span>
+</div>
+<!-- Stage Canvas with Subject Box -->
+<div class="w-full h-full relative flex items-center justify-center p-4 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]">
+<div class="relative w-full max-w-[270px] aspect-[7/9] rounded-xl overflow-hidden shadow-2xl border border-slate-800/80 bg-slate-900">
+<img class="w-full h-full object-cover select-none pointer-events-none" data-alt="Authentic unedited frontal portrait of an Asian student candidate sitting in a room with a textured apartment wall in background, neutral expression, casual blue t-shirt, well lit natural lighting for exam admission form verification" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAfRXU6OWpqIRTkKP7EMh_6U8VMGSbmJgwPkh0FxavDMLN8rf1588Uwq0mAjCar-Dhgz5JjDxnRcqxmAyKp8ZumqKvKhGkMESv57y_kkSxzTCHA3uuocsv3NnEDE1JQVK5GAGuIcrpQH2pPwO5dFN7jWt0K007tRaK3GrKPbmn_78wBjrzAmhYBcbCfNQi7KGe1bCRnHNcVVJ2FoKHmHzBJdnBeowuATt4uF6bMoqTl0m2ElQ_Vc0eT4w"/>
+<!-- Bounding Box / Detection HUD -->
+<div class="absolute inset-[14%_17%_24%_17%] border border-amber-400/80 border-dashed rounded-lg pointer-events-none flex flex-col justify-between p-1.5 shadow-[0_0_15px_rgba(251,191,36,0.15)]">
+<div class="flex justify-between items-center">
+<span class="bg-amber-500/90 text-slate-950 font-mono text-[9px] font-semibold px-1.5 py-0.5 rounded shadow">Subject Detected</span>
+<span class="material-symbols-outlined text-amber-400 text-[14px]">face</span>
+</div>
+<div class="flex justify-between text-[9px] font-mono text-amber-300 bg-slate-950/80 backdrop-blur px-1.5 py-0.5 rounded border border-amber-400/30">
+<span>Fill: 79%</span>
+<span>Yaw: 0.1°</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Bottom Raw Info Tag -->
+<div class="absolute bottom-3 left-3 z-30 bg-slate-950/75 backdrop-blur border border-slate-800/80 px-2.5 py-0.5 rounded-full text-[10px] font-mono text-slate-400">
+              Unprocessed Room Background
+            </div>
+</div>
+<!-- RIGHT CANVAS: PROCESSED ADMISSION READY PHOTO -->
+<div class="relative bg-[#0b1120] border border-indigo-500/30 rounded-2xl overflow-hidden flex flex-col shadow-2xl ring-1 ring-indigo-500/20">
+<!-- Output Header Pill -->
+<div class="absolute top-3 left-3 z-30 flex items-center gap-2 bg-slate-950/85 backdrop-blur-md border border-slate-800 px-3 py-1 rounded-full text-[10px] font-mono shadow-md">
+<span class="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_#34d399]"></span>
+<span class="text-white font-medium">Output: 350×450 px</span>
+<span class="text-slate-500">·</span>
+<span class="text-emerald-400 font-semibold" id="canvas-badge-kb">42.8 KB</span>
+<span class="text-slate-500">·</span>
+<span class="text-cyan-400 font-medium">300 DPI</span>
+</div>
+<!-- Floating AI Cutout Background Tone Switcher -->
+<div class="absolute top-3 right-3 z-30 flex items-center gap-1.5 bg-slate-950/85 backdrop-blur-md border border-slate-800 p-1 rounded-full shadow-lg">
+<span class="text-[9px] font-mono text-slate-400 pl-1.5 pr-0.5">Tone:</span>
+<button class="w-5 h-5 rounded-full bg-[#38bdf8] ring-2 ring-white ring-offset-1 ring-offset-slate-950 shadow-sm transition-transform hover:scale-110" id="swatch-blue" title="Sky Blue (NEET Standard)"></button>
+<button class="w-5 h-5 rounded-full bg-[#ffffff] ring-1 ring-slate-700 transition-transform hover:scale-110" id="swatch-white" title="Studio White (US Visa / Passport)"></button>
+<button class="w-5 h-5 rounded-full bg-[#e2e8f0] ring-1 ring-slate-700 transition-transform hover:scale-110" id="swatch-grey" title="Neutral Off-White"></button>
+<button class="w-5 h-5 rounded-full bg-[conic-gradient(#64748b_25%,#334155_0_50%,#64748b_0_75%,#334155_0)] ring-1 ring-slate-700 transition-transform hover:scale-110" id="swatch-alpha" title="Transparent PNG"></button>
+</div>
+<!-- Processed Stage Area with Biometric Overlays -->
+<div class="w-full h-full relative flex items-center justify-center p-4 bg-[radial-gradient(#1e293b_1px,transparent_1px)] [background-size:16px_16px]">
+<div class="relative w-full max-w-[270px] aspect-[7/9] rounded-xl overflow-hidden shadow-2xl bg-[#38bdf8] transition-colors duration-300 border border-slate-700/60" id="processed-crop-box">
+<!-- Isolated Subject -->
+<img class="w-full h-full object-cover select-none pointer-events-none" data-alt="Cleanly isolated cutout portrait of an Asian applicant with pristine contours, neutral expression, looking straight into the camera, high resolution 300 DPI biometric passport quality on a vibrant sky blue background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvkJN6vq2wzcg6DIN-c1oqAQkk8L5nPdto1TFNDnL-VYKiCIioWGsYRZGN7fk0VcscEaK7BuIcBdS_ErEY_RJfmUrEdpnnmMDVxxJegYB3pwIOKI-P0c5i3ufmA4186Qil0x7DSKo6RskACZ6QijHKUU-SSLw6dhlvt-cPJMD2M7VDKbNKz2x4T_YZxGlvBRNL4iIN5Q-JUFzCSDV2TiGWuY5B0qq6SZKbTJ4j6Q0BxXiw5TXORrLSag"/>
+<!-- Sleek Holographic Biometric Guides Overlay -->
+<div class="absolute inset-0 pointer-events-none flex flex-col justify-between">
+<!-- Subtle Rule-of-Thirds Grid -->
+<div class="w-full h-full grid grid-cols-3 grid-rows-3 opacity-20">
+<div class="border-r border-b border-indigo-300"></div>
+<div class="border-r border-b border-indigo-300"></div>
+<div class="border-b border-indigo-300"></div>
+<div class="border-r border-b border-indigo-300"></div>
+<div class="border-r border-b border-indigo-300"></div>
+<div class="border-b border-indigo-300"></div>
+<div class="border-r border-indigo-300"></div>
+<div class="border-r border-indigo-300"></div>
+<div></div>
+</div>
+<!-- Eye-Level Mandatory Guide -->
+<div class="absolute top-[42%] left-0 right-0 h-[1px] bg-cyan-300/80 flex items-center justify-between px-2">
+<span class="text-[8px] font-mono text-cyan-200 font-semibold bg-slate-950/80 px-1.5 py-0.2 rounded -translate-y-1/2 border border-cyan-400/40">EYE LEVEL (56-60%)</span>
+<div class="h-1.5 w-1.5 rounded-full bg-cyan-300 shadow-[0_0_6px_#67e8f9]"></div>
+</div>
+<!-- Chin Limit Guide -->
+<div class="absolute bottom-[20%] left-0 right-0 h-[1px] bg-cyan-300/60 flex items-center justify-between px-2">
+<span class="text-[8px] font-mono text-cyan-300/90 bg-slate-950/80 px-1.5 py-0.2 rounded -translate-y-1/2 border border-cyan-400/30">CHIN LIMIT</span>
+<div class="h-1.5 w-1.5 rounded-full bg-cyan-300"></div>
+</div>
+<!-- Biometric Head Height Vertical Bracket -->
+<div class="absolute left-1.5 top-[15%] bottom-[20%] w-1.5 border-l-2 border-y-2 border-indigo-400/80 flex items-center">
+<span class="text-[7.5px] font-mono text-indigo-200 bg-slate-950/90 px-1 rounded rotate-90 origin-left -translate-y-2 translate-x-1.5 whitespace-nowrap">75% FACE RATIO</span>
+</div>
+</div>
+<!-- Sleek White Corner Reticles -->
+<div class="absolute top-1.5 left-1.5 w-3 h-3 border-t-2 border-l-2 border-white/80 pointer-events-none"></div>
+<div class="absolute top-1.5 right-1.5 w-3 h-3 border-t-2 border-r-2 border-white/80 pointer-events-none"></div>
+<div class="absolute bottom-1.5 left-1.5 w-3 h-3 border-b-2 border-l-2 border-white/80 pointer-events-none"></div>
+<div class="absolute bottom-1.5 right-1.5 w-3 h-3 border-b-2 border-r-2 border-white/80 pointer-events-none"></div>
+</div>
+</div>
+<!-- Bottom Verification Confirmation -->
+<div class="absolute bottom-3 right-3 z-30 flex items-center gap-1.5 bg-emerald-950/70 backdrop-blur-md border border-emerald-500/40 px-3 py-1 rounded-full text-[10px] font-mono text-emerald-300 shadow-sm">
+<span class="material-symbols-outlined text-[13px] text-emerald-400" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>DPI &amp; Aspect Ratio Verified</span>
+</div>
+</div>
+</div>
+<!-- Lower Interaction Strip & Gestures Guide -->
+<div class="bg-[#0f172a]/70 backdrop-blur-xl border border-slate-800/80 rounded-2xl px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-slate-400 text-xs">
+<div class="flex items-center gap-4 text-[11px] font-mono">
+<span class="flex items-center gap-1 text-slate-200">
+<span class="material-symbols-outlined text-indigo-400 text-[15px]">touch_app</span>
+<span>Gestures:</span>
+</span>
+<span>Drag subject to pan</span>
+<span class="text-slate-600">·</span>
+<span>Scroll / Pinch to zoom</span>
+<span class="text-slate-600">·</span>
+<span>Shift + Drag to snap</span>
+</div>
+<div class="flex items-center gap-1.5 text-cyan-400 text-[11px] font-mono">
+<span class="material-symbols-outlined text-[14px]">auto_awesome</span>
+<span>Lossless Smart Resampler 4.0 Active</span>
+</div>
+</div>
+</main>
+<!-- RIGHT PANEL: FILE SIZE OPTIMIZER & COMPLIANCE CRITERIA (Col 3) -->
+<aside class="lg:col-span-3 flex flex-col gap-3">
+<!-- Live File Size Limiter & Buffer Gauge -->
+<div class="bg-[#0f172a]/70 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-4 shadow-xl">
+<div class="flex items-center justify-between mb-3.5">
+<div class="flex items-center gap-2">
+<div class="w-7 h-7 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center">
+<span class="material-symbols-outlined text-[16px]">compress</span>
+</div>
+<div>
+<h3 class="font-semibold text-slate-100 text-[13px] leading-tight">File Size Limiter</h3>
+<p class="text-[10px] text-slate-400">Adaptive JPEG bitrate tuner</p>
+</div>
+</div>
+<span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">Strict 50 KB Cap</span>
+</div>
+<!-- Target Max Limit Slider -->
+<div class="mb-3.5">
+<div class="flex justify-between items-center text-xs mb-1.5">
+<span class="text-slate-400">Portal Max Threshold</span>
+<span class="font-mono text-emerald-400 font-bold text-xs bg-emerald-500/10 px-2 py-0.5 rounded" id="target-cap-display">50 KB</span>
+</div>
+<input class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-emerald-400" id="size-cap-slider" max="200" min="10" type="range" value="50"/>
+<div class="flex justify-between text-[9px] font-mono text-slate-500 mt-1">
+<span>10 KB (Min)</span>
+<span>50 KB (NTA)</span>
+<span>100 KB</span>
+<span>200 KB</span>
+</div>
+</div>
+<!-- Real-Time Calculated Gauge Box -->
+<div class="bg-slate-950/70 border border-slate-800/90 rounded-xl p-3 mb-3.5">
+<div class="flex justify-between items-baseline mb-2">
+<span class="text-[11px] text-slate-400 font-mono">Calculated Export Weight:</span>
+<div class="flex items-baseline gap-1 font-mono">
+<span class="text-xl font-bold text-emerald-400 leading-none" id="output-kb-text">42.8</span>
+<span class="text-emerald-400 text-xs">KB</span>
+</div>
+</div>
+<!-- Buffer Bar Indicator -->
+<div class="w-full h-2 bg-slate-900 rounded-full overflow-hidden p-[1px] border border-slate-800">
+<div class="h-full bg-gradient-to-r from-emerald-500 to-cyan-400 rounded-full transition-all duration-300" id="gauge-bar" style="width: 85%;"></div>
+</div>
+<div class="flex justify-between items-center text-[10px] font-mono text-emerald-400 mt-2">
+<span class="flex items-center gap-1">
+<span class="material-symbols-outlined text-[12px]">check</span>
+<span>Safe upload zone</span>
+</span>
+<span class="text-slate-400" id="headroom-text">7.2 KB headroom</span>
+</div>
+</div>
+<!-- Quality Subsampling Slider -->
+<div class="mb-3.5">
+<div class="flex justify-between items-center text-xs mb-1.5">
+<span class="text-slate-400">Quality / Subsampling</span>
+<span class="text-slate-200 font-mono text-[11px]">92% (Tuned)</span>
+</div>
+<input class="w-full h-1.5 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-indigo-500" max="100" min="60" type="range" value="92"/>
+</div>
+<!-- Format Selector Container -->
+<div class="mb-3">
+<span class="block text-[10px] font-mono uppercase tracking-wider text-slate-400 mb-1.5">Format Container</span>
+<div class="grid grid-cols-3 gap-1 font-mono text-xs">
+<button class="py-1 rounded-lg bg-indigo-600 text-white font-medium shadow">JPG / JPEG</button>
+<button class="py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors">PNG</button>
+<button class="py-1 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200 transition-colors">WebP</button>
+</div>
+</div>
+<!-- EXIF Privacy Checkbox -->
+<label class="flex items-center gap-2 cursor-pointer pt-1">
+<input checked="" class="accent-indigo-500 rounded bg-slate-900 border-slate-700 w-3.5 h-3.5 cursor-pointer" type="checkbox"/>
+<span class="text-[11px] text-slate-400 select-none">Strip EXIF metadata &amp; GPS coordinates</span>
+</label>
+</div>
+<!-- Official Portal Checklist Card -->
+<div class="bg-[#0f172a]/70 backdrop-blur-xl border border-slate-800/90 rounded-2xl p-4 shadow-xl">
+<div class="flex items-center justify-between mb-3">
+<h4 class="font-semibold text-slate-200 text-[12px] flex items-center gap-1.5">
+<span class="material-symbols-outlined text-[15px] text-emerald-400">fact_check</span>
+<span>Portal Verification Checklist</span>
+</h4>
+<span class="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-300 font-medium">5/5 Passed</span>
+</div>
+<ul class="flex flex-col gap-2 text-xs text-slate-300">
+<li class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-400 text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Head fill satisfies 70% to 80%</span>
+</li>
+<li class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-400 text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Both ears &amp; eyes fully unobstructed</span>
+</li>
+<li class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-400 text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Solid Sky Blue / White clean background</span>
+</li>
+<li class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-400 text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>File size strictly within 10 KB - 50 KB</span>
+</li>
+<li class="flex items-center gap-2">
+<span class="material-symbols-outlined text-emerald-400 text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Baseline progressive JPEG encoding</span>
+</li>
+</ul>
+</div>
+<!-- Prominent Primary Download Action & Secondary Buttons -->
+<div class="flex flex-col gap-2">
+<button class="w-full h-11 bg-gradient-to-r from-indigo-600 via-indigo-500 to-cyan-500 hover:from-indigo-500 hover:to-cyan-400 text-white font-semibold text-xs rounded-xl shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 transition-all active:scale-[0.98]" id="btn-export-main">
+<span class="material-symbols-outlined text-[18px]">download_for_offline</span>
+<span id="btn-export-text">Export Admission Ready (JPG · 42.8 KB)</span>
+</button>
+<div class="grid grid-cols-2 gap-2">
+<button class="h-8 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+<span>Copy Base64</span>
+</button>
+<button class="h-8 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-[11px] font-medium flex items-center justify-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[14px]">share</span>
+<span>Send to Phone</span>
+</button>
+</div>
+</div>
+</aside>
+</div>
+</div>
+<!-- SCRIPT FOR DYNAMIC INTERACTION & PREVIEW BEHAVIORS -->
+<script>
+    (function initModernPrecisionStudio() {
+      // Mode selector
+      const photoBtn = document.getElementById('mode-photo-btn');
+      const sigBtn = document.getElementById('mode-sig-btn');
+
+      if (photoBtn && sigBtn) {
+        photoBtn.addEventListener('click', () => {
+          photoBtn.className = 'flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-medium text-[12px] shadow-sm transition-all duration-200';
+          sigBtn.className = 'flex items-center gap-1.5 px-3.5 py-1 rounded-full text-slate-400 hover:text-slate-200 font-medium text-[12px] transition-all duration-200';
+        });
+        sigBtn.addEventListener('click', () => {
+          sigBtn.className = 'flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-gradient-to-r from-indigo-600 to-indigo-500 text-white font-medium text-[12px] shadow-sm transition-all duration-200';
+          photoBtn.className = 'flex items-center gap-1.5 px-3.5 py-1 rounded-full text-slate-400 hover:text-slate-200 font-medium text-[12px] transition-all duration-200';
+        });
+      }
+
+      // Background Tone Swatches reactivity
+      const cropBox = document.getElementById('processed-crop-box');
+      const swatchBlue = document.getElementById('swatch-blue');
+      const swatchWhite = document.getElementById('swatch-white');
+      const swatchGrey = document.getElementById('swatch-grey');
+      const swatchAlpha = document.getElementById('swatch-alpha');
+
+      const swatches = [
+        { btn: swatchBlue, bg: '#38bdf8' },
+        { btn: swatchWhite, bg: '#ffffff' },
+        { btn: swatchGrey, bg: '#e2e8f0' },
+        { btn: swatchAlpha, bg: 'transparent' }
+      ];
+
+      swatches.forEach(s => {
+        if (s.btn && cropBox) {
+          s.btn.addEventListener('click', () => {
+            swatches.forEach(other => other.btn && other.btn.classList.remove('ring-2', 'ring-white', 'ring-offset-1', 'ring-offset-slate-950'));
+            s.btn.classList.add('ring-2', 'ring-white', 'ring-offset-1', 'ring-offset-slate-950');
+            cropBox.style.backgroundColor = s.bg;
+          });
+        }
+      });
+
+      // Rotation dial sync
+      const rotSlider = document.getElementById('rot-slider');
+      const rotDisplay = document.getElementById('rot-val-display');
+      const rotSub1 = document.getElementById('rot-sub-1');
+      const rotAdd1 = document.getElementById('rot-add-1');
+
+      if (rotSlider && rotDisplay) {
+        const updateRot = (val) => {
+          rotSlider.value = val;
+          const num = parseFloat(val);
+          rotDisplay.textContent = (num >= 0 ? '+' : '') + num.toFixed(1) + '°';
+        };
+        rotSlider.addEventListener('input', (e) => updateRot(e.target.value));
+        if (rotSub1) rotSub1.addEventListener('click', () => updateRot(Math.max(-15, parseFloat(rotSlider.value) - 1)));
+        if (rotAdd1) rotAdd1.addEventListener('click', () => updateRot(Math.min(15, parseFloat(rotSlider.value) + 1)));
+      }
+
+      // Scale slider sync
+      const scaleSlider = document.getElementById('scale-slider');
+      const scaleDisplay = document.getElementById('scale-val-display');
+      if (scaleSlider && scaleDisplay) {
+        scaleSlider.addEventListener('input', (e) => {
+          scaleDisplay.textContent = e.target.value + '%';
+        });
+      }
+
+      // Zoom Buttons
+      let currentZoom = 100;
+      const zoomTxt = document.getElementById('canvas-zoom-txt');
+      const zoomIn = document.getElementById('btn-zoom-in');
+      const zoomOut = document.getElementById('btn-zoom-out');
+
+      if (zoomIn && zoomOut && zoomTxt) {
+        zoomIn.addEventListener('click', () => {
+          currentZoom = Math.min(300, currentZoom + 10);
+          zoomTxt.textContent = currentZoom + '%';
+        });
+        zoomOut.addEventListener('click', () => {
+          currentZoom = Math.max(50, currentZoom - 10);
+          zoomTxt.textContent = currentZoom + '%';
+        });
+      }
+
+      // File Size slider reactivity
+      const sizeCapSlider = document.getElementById('size-cap-slider');
+      const targetCapDisplay = document.getElementById('target-cap-display');
+      const outputKbText = document.getElementById('output-kb-text');
+      const topBadgeKb = document.getElementById('top-badge-kb');
+      const canvasBadgeKb = document.getElementById('canvas-badge-kb');
+      const btnExportText = document.getElementById('btn-export-text');
+      const gaugeBar = document.getElementById('gauge-bar');
+      const headroomText = document.getElementById('headroom-text');
+
+      if (sizeCapSlider && outputKbText) {
+        sizeCapSlider.addEventListener('input', (e) => {
+          const cap = parseInt(e.target.value);
+          const computed = (cap * 0.856).toFixed(1);
+          if (targetCapDisplay) targetCapDisplay.textContent = cap + ' KB';
+          outputKbText.textContent = computed;
+          if (topBadgeKb) topBadgeKb.textContent = computed + ' KB';
+          if (canvasBadgeKb) canvasBadgeKb.textContent = computed + ' KB';
+          if (btnExportText) btnExportText.textContent = `Export Admission Ready (JPG · ${computed} KB)`;
+          if (headroomText) headroomText.textContent = `${(cap - parseFloat(computed)).toFixed(1)} KB headroom`;
+          if (gaugeBar) gaugeBar.style.width = '85%';
+        });
+      }
+
+      // View mode switching (Dual vs Single vs Split)
+      const viewDual = document.getElementById('view-mode-dual');
+      const viewSingle = document.getElementById('view-mode-single');
+      const viewSplit = document.getElementById('view-mode-split');
+      const dualContainer = document.getElementById('dual-canvas-container');
+
+      if (viewDual && viewSingle && viewSplit && dualContainer) {
+        const resetViewButtons = () => {
+          viewDual.className = 'px-3 py-1 rounded-lg text-slate-400 hover:text-slate-200 text-[11px] flex items-center gap-1 transition-all';
+          viewSingle.className = 'px-3 py-1 rounded-lg text-slate-400 hover:text-slate-200 text-[11px] flex items-center gap-1 transition-all';
+          viewSplit.className = 'px-3 py-1 rounded-lg text-slate-400 hover:text-slate-200 text-[11px] flex items-center gap-1 transition-all';
+        };
+
+        viewDual.addEventListener('click', () => {
+          resetViewButtons();
+          viewDual.className = 'px-3 py-1 rounded-lg bg-indigo-600 text-white font-medium text-[11px] flex items-center gap-1 shadow transition-all';
+          dualContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-3.5 flex-1 min-h-[510px]';
+          if (dualContainer.children[0]) dualContainer.children[0].style.display = 'flex';
+          if (dualContainer.children[1]) dualContainer.children[1].style.display = 'flex';
+        });
+
+        viewSingle.addEventListener('click', () => {
+          resetViewButtons();
+          viewSingle.className = 'px-3 py-1 rounded-lg bg-indigo-600 text-white font-medium text-[11px] flex items-center gap-1 shadow transition-all';
+          dualContainer.className = 'grid grid-cols-1 gap-3.5 flex-1 min-h-[510px]';
+          if (dualContainer.children[0]) dualContainer.children[0].style.display = 'none';
+          if (dualContainer.children[1]) dualContainer.children[1].style.display = 'flex';
+        });
+
+        viewSplit.addEventListener('click', () => {
+          resetViewButtons();
+          viewSplit.className = 'px-3 py-1 rounded-lg bg-indigo-600 text-white font-medium text-[11px] flex items-center gap-1 shadow transition-all';
+          dualContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-3.5 flex-1 min-h-[510px]';
+          if (dualContainer.children[0]) dualContainer.children[0].style.display = 'flex';
+          if (dualContainer.children[1]) dualContainer.children[1].style.display = 'flex';
+        });
+      }
+
+      // Auto-center action button feedback
+      const autoCenterBtn = document.getElementById('btn-auto-center');
+      if (autoCenterBtn) {
+        autoCenterBtn.addEventListener('click', () => {
+          const xOffset = document.getElementById('x-offset-val');
+          const yOffset = document.getElementById('y-offset-val');
+          if (xOffset) xOffset.textContent = '+0px';
+          if (yOffset) yOffset.textContent = '+0px';
+          autoCenterBtn.classList.add('bg-emerald-500/20', 'text-emerald-300');
+          setTimeout(() => {
+            autoCenterBtn.classList.remove('bg-emerald-500/20', 'text-emerald-300');
+          }, 800);
+        });
+      }
+    })();
+  </script>
+</body></html>

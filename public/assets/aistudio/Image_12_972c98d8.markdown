@@ -1,0 +1,179 @@
+---
+name: DocuCrop Studio
+colors:
+  surface: '#0b1326'
+  surface-dim: '#0b1326'
+  surface-bright: '#31394d'
+  surface-container-lowest: '#060e20'
+  surface-container-low: '#131b2e'
+  surface-container: '#171f33'
+  surface-container-high: '#222a3d'
+  surface-container-highest: '#2d3449'
+  on-surface: '#dae2fd'
+  on-surface-variant: '#c2c6d6'
+  inverse-surface: '#dae2fd'
+  inverse-on-surface: '#283044'
+  outline: '#8c909f'
+  outline-variant: '#424754'
+  surface-tint: '#adc6ff'
+  primary: '#adc6ff'
+  on-primary: '#002e6a'
+  primary-container: '#4d8eff'
+  on-primary-container: '#00285d'
+  inverse-primary: '#005ac2'
+  secondary: '#4edea3'
+  on-secondary: '#003824'
+  secondary-container: '#00a572'
+  on-secondary-container: '#00311f'
+  tertiary: '#ffb95f'
+  on-tertiary: '#472a00'
+  tertiary-container: '#ca8100'
+  on-tertiary-container: '#3e2400'
+  error: '#ffb4ab'
+  on-error: '#690005'
+  error-container: '#93000a'
+  on-error-container: '#ffdad6'
+  primary-fixed: '#d8e2ff'
+  primary-fixed-dim: '#adc6ff'
+  on-primary-fixed: '#001a42'
+  on-primary-fixed-variant: '#004395'
+  secondary-fixed: '#6ffbbe'
+  secondary-fixed-dim: '#4edea3'
+  on-secondary-fixed: '#002113'
+  on-secondary-fixed-variant: '#005236'
+  tertiary-fixed: '#ffddb8'
+  tertiary-fixed-dim: '#ffb95f'
+  on-tertiary-fixed: '#2a1700'
+  on-tertiary-fixed-variant: '#653e00'
+  background: '#0b1326'
+  on-background: '#dae2fd'
+  surface-variant: '#2d3449'
+typography:
+  display-lg:
+    fontFamily: Inter
+    fontSize: 32px
+    fontWeight: '600'
+    lineHeight: 40px
+    letterSpacing: -0.02em
+  display-lg-mobile:
+    fontFamily: Inter
+    fontSize: 24px
+    fontWeight: '600'
+    lineHeight: 32px
+    letterSpacing: -0.01em
+  title-md:
+    fontFamily: Inter
+    fontSize: 18px
+    fontWeight: '600'
+    lineHeight: 24px
+    letterSpacing: -0.01em
+  title-sm:
+    fontFamily: Inter
+    fontSize: 14px
+    fontWeight: '500'
+    lineHeight: 20px
+    letterSpacing: -0.005em
+  body-md:
+    fontFamily: Inter
+    fontSize: 13px
+    fontWeight: '400'
+    lineHeight: 18px
+  body-sm:
+    fontFamily: Inter
+    fontSize: 12px
+    fontWeight: '400'
+    lineHeight: 16px
+  label-md:
+    fontFamily: Inter
+    fontSize: 12px
+    fontWeight: '500'
+    lineHeight: 16px
+  data-mono-md:
+    fontFamily: JetBrains Mono
+    fontSize: 12px
+    fontWeight: '500'
+    lineHeight: 16px
+    letterSpacing: -0.02em
+  data-mono-sm:
+    fontFamily: JetBrains Mono
+    fontSize: 11px
+    fontWeight: '400'
+    lineHeight: 14px
+    letterSpacing: -0.01em
+  data-mono-xs:
+    fontFamily: JetBrains Mono
+    fontSize: 10px
+    fontWeight: '400'
+    lineHeight: 12px
+rounded:
+  sm: 0.125rem
+  DEFAULT: 0.25rem
+  md: 0.375rem
+  lg: 0.5rem
+  xl: 0.75rem
+  full: 9999px
+spacing:
+  gutter: 0.75rem
+  gutter-mobile: 0.5rem
+  margin: 1rem
+  margin-mobile: 0.75rem
+  space-xs: 0.25rem
+  space-sm: 0.375rem
+  space-md: 0.5rem
+  space-lg: 0.75rem
+  space-xl: 1rem
+---
+
+## Brand & Style
+The design system establishes a high-density, surgical utility environment tailored for passport, visa, credentialing, and biometric photo processing. Inspired by creative suites like Lightroom and Linear, the aesthetic is rooted in functional minimalism with technical refinement: absolute visual restraint, crisp separation of work surfaces from metadata panels, and micro-scale tactile controls.
+
+The interface serves photographers, studio managers, consular processing agents, and high-volume compliance officers who demand speed, millimeter precision, and visual clarity. The emotional tone is authoritative, hyper-focused, and dependable—evoking confidence through real-time feedback, tabular data parity, and unobtrusive chrome that yields absolute focus to the image canvas.
+
+## Colors
+The default color mode is dark, utilizing deep neutral slate surfaces (`#0F172A` foundation, `#1E293B` panel containers, `#334155` interior divider borders) to reduce optical fatigue during extended inspection sessions. 
+
+- **Primary (`#3B82F6` / `#2563EB`):** Electric sapphire drives active focal states, primary crop boundaries, marquee selections, and confirmed actions.
+- **Secondary (`#10B981`):** Precision emerald handles strict validation criteria (biometric compliance pass, face center confirmation, DPI resolution thresholds met).
+- **Tertiary (`#F59E0B`):** Studio amber surfaces critical operational boundaries (aspect ratio skew warnings, file size payload limits, non-standard backdrop warnings).
+- **Studio Blue Accent (`#0EA5E9`):** Reserved strictly for backdrop preset indicators and color-grading mask layers.
+
+Light studio mode adapts these foundations symmetrically using crisp `#F8FAFC` base canvases, `#FFFFFF` elevated utility palettes, and sharp `#E2E8F0` structural boundaries while preserving identical semantic status tokens.
+
+## Typography
+Typography is split into dual operational roles: structural clarity (Inter) and metric precision (JetBrains Mono).
+
+- **Inter:** Drives global navigation, panel titles, settings copy, tooltips, and interactive affordances. Tracking is tightened across display and title layers to sustain visual density.
+- **JetBrains Mono:** Mandated for all coordinate inputs (X, Y, W, H), metric units (`mm`, `in`, `px`), payload sizes (`KB`, `MB`), focal lengths, optical histograms, and compliance scores. Tabular figures prevent layout jumping during continuous scrub-wheel interactions and crop box transformations.
+
+## Layout & Spacing
+The layout model employs a fixed-dock workspace architecture designed for high-density tools. The canvas area is fluid and responsive, anchored between a fixed 56px horizontal top utility bar, an optional 44px left vertical tool strip, and a fixed 320px right-hand inspector panel.
+
+- **Desktop (>= 1280px):** Permanent 3-pane layout. Inspector panels utilize 0.5rem (`space-md`) structural spacing between metric rows and 0.75rem (`space-lg`) section paddings.
+- **Tablet (768px - 1279px):** Inspector transitions into a collapsible slide-over drawer; secondary tool bars fold into segmented drop-downs.
+- **Mobile (< 768px):** Single-canvas focal view with bottom-anchored modal sheet controls and floating touch-friendly action bars.
+
+Component spacing strictly avoids loose airy paddings, maintaining continuous 4px grid increments (`0.25rem` to `1rem`) to keep mission-critical metrics immediately within the user's primary field of view.
+
+## Elevation & Depth
+Visual hierarchy is established using disciplined tonal surface layering and low-contrast mechanical outlines, bypassing excessive shadows or glassmorphic distortions.
+
+- **Ground Layer (Canvas Backing):** Darkest slate (`#090D16`), providing a light-absorbent staging ground for image validation.
+- **Panel Containers:** Mid-tone slate (`#1E293B`) bounded by a subtle 1px mechanical border (`#334155`).
+- **Elevated Inputs & Controls:** Recessed or distinct slate tiers (`#0F172A`) for inputs; surface tier 3 (`#334155`) for hovering buttons and interactive pills.
+- **Modals & Flyout Inspectors:** Layered above the workspace using a crisp boundary (`1px solid #475569`) complemented by an ambient, surgical drop shadow: `0 8px 24px -4px rgba(0, 0, 0, 0.45)`.
+- **Active Marquee & Selection Guides:** Zero shadow; high-contrast razor lines with 1px stroke rendering at 100% opacity.
+
+## Shapes
+Shapes express the exactness of industrial hardware. A base roundedness of `0.25rem` (Level 1 - Soft) applies uniformly to input fields, buttons, segmented toggle bars, and inspector panels.
+
+Nested cards and dialog flyouts use `0.5rem` (`rounded-lg`), ensuring clean containment without drifting into consumer-grade pill shapes. Circular geometries are strictly reserved for eye-dropper swatches, compliance check badges, and focal anchor handles on the cropping viewport.
+
+## Components
+
+- **Buttons:** Compact 28px and 32px heights. Primary buttons feature electric sapphire with white type and zero shadow. Secondary buttons feature transparent slate fills with 1px `#334155` borders. Hover states trigger subtle border lightening rather than scale shifts.
+- **Segmented Controls:** Enclosed container toggles (e.g., standard aspect ratios: 2x2 in, 35x45 mm, 50x70 mm) using `#0F172A` background and an elevated active segment with `#3B82F6` accent indicators.
+- **Numeric Scrub Inputs:** Input fields with embedded unit labels (`mm`, `px`, `%`) in `JetBrains Mono`. Feature invisible drag-scrub zones across the label for rapid bidirectional value adjustments.
+- **Range Sliders:** Slim 2px track with high-contrast active sapphire fill and an 8px circular thumb with no drop shadow, featuring live coordinate tooltips on interaction.
+- **Compliance Chips:** Status tags with integrated micro-dots (emerald for certified specs, amber for warning thresholds, slate for inactive). Monospaced metadata labels at 11px font size.
+- **Inspector Cards:** Grouped accordion sections with hair-line splitters. Every row aligns parameters in a strict key-value grid (Parameter label left, tabular input right).
+- **Inspection Viewport:** Custom interactive overlay with biometric eye-line guides, chin-to-crown measurement brackets, and safe margin guides rendered in semi-transparent primary sapphire.

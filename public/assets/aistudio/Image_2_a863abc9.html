@@ -1,0 +1,628 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head><meta charset="utf-8"/><meta content="width=device-width, initial-scale=1.0" name="viewport"/><meta content="web_dashboard" name="shell-type"/><link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/><link href="https://fonts.googleapis.com" rel="preconnect"/><link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/><link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/><style>@layer base{html,body{margin:0;padding:0;}body{overscroll-behavior:none;}main>:first-child{margin-top:0!important;}main>:last-child{margin-bottom:0!important;}}::-webkit-scrollbar{display:none;}</style><script src="https://cdn.tailwindcss.com"></script><script id="tailwind-config">tailwind.config={darkMode:"class",theme:{extend:{"colors":{"error-container":"#93000a","surface-container-high":"#222a3d","on-secondary-fixed":"#002113","surface-container-lowest":"#060e20","tertiary-fixed":"#ffddb8","surface-tint":"#adc6ff","background":"#0b1326","secondary-fixed-dim":"#4edea3","outline":"#8c909f","on-background":"#dae2fd","inverse-primary":"#005ac2","on-secondary":"#003824","surface-dim":"#0b1326","surface-container":"#171f33","on-surface":"#dae2fd","on-primary-fixed-variant":"#004395","on-tertiary-fixed-variant":"#653e00","on-secondary-container":"#00311f","secondary-container":"#00a572","on-primary-fixed":"#001a42","tertiary-fixed-dim":"#ffb95f","surface-variant":"#2d3449","secondary-fixed":"#6ffbbe","surface-container-low":"#131b2e","inverse-on-surface":"#283044","primary-container":"#4d8eff","inverse-surface":"#dae2fd","surface-bright":"#31394d","on-surface-variant":"#c2c6d6","on-error-container":"#ffdad6","primary-fixed-dim":"#adc6ff","on-error":"#690005","secondary":"#4edea3","surface":"#0b1326","tertiary-container":"#ca8100","on-tertiary-container":"#3e2400","surface-container-highest":"#2d3449","on-primary-container":"#00285d","primary":"#adc6ff","primary-fixed":"#d8e2ff","error":"#ffb4ab","on-tertiary-fixed":"#2a1700","tertiary":"#ffb95f","on-tertiary":"#472a00","outline-variant":"#424754","on-secondary-fixed-variant":"#005236","on-primary":"#002e6a"},"borderRadius":{"DEFAULT":"0.125rem","lg":"0.25rem","xl":"0.5rem","full":"0.75rem"},"spacing":{"margin":"1rem","space-xl":"1rem","space-lg":"0.75rem","space-xs":"0.25rem","margin-mobile":"0.75rem","gutter":"0.75rem","space-sm":"0.375rem","space-md":"0.5rem","gutter-mobile":"0.5rem"},"fontFamily":{"title-sm":["Inter"],"body-md":["Inter"],"title-md":["Inter"],"data-mono-md":["JetBrains Mono"],"data-mono-sm":["JetBrains Mono"],"data-mono-xs":["JetBrains Mono"],"display-lg-mobile":["Inter"],"label-md":["Inter"],"body-sm":["Inter"],"display-lg":["Inter"]},"fontSize":{"title-sm":["14px",{"lineHeight":"20px","letterSpacing":"-0.005em","fontWeight":"500"}],"body-md":["13px",{"lineHeight":"18px","fontWeight":"400"}],"title-md":["18px",{"lineHeight":"24px","letterSpacing":"-0.01em","fontWeight":"600"}],"data-mono-md":["12px",{"lineHeight":"16px","letterSpacing":"-0.02em","fontWeight":"500"}],"data-mono-sm":["11px",{"lineHeight":"14px","letterSpacing":"-0.01em","fontWeight":"400"}],"data-mono-xs":["10px",{"lineHeight":"12px","fontWeight":"400"}],"display-lg-mobile":["24px",{"lineHeight":"32px","letterSpacing":"-0.01em","fontWeight":"600"}],"label-md":["12px",{"lineHeight":"16px","fontWeight":"500"}],"body-sm":["12px",{"lineHeight":"16px","fontWeight":"400"}],"display-lg":["32px",{"lineHeight":"40px","letterSpacing":"-0.02em","fontWeight":"600"}]}}}};</script></head><body class="bg-background font-body-md text-body-md text-on-surface antialiased"><header class="fixed top-0 left-0 right-0 z-50 bg-surface-container-lowest/95 backdrop-blur-md shadow-[0_1px_8px_rgba(0,0,0,0.45)]"><div class="h-14 w-full px-space-lg flex items-center justify-between gap-space-md"><div class="flex items-center gap-space-lg"><div class="flex items-center gap-space-sm shrink-0"><img alt="FormPhoto Pro Logo" class="h-8 w-auto object-contain" src="https://lh3.googleusercontent.com/aida/AEtjO1VsJ9Yc13hz2LRZy-CzWYovCO8n1rZznIFFZihFEOgZdGwqT0f5csdzv5DBtEMGj0knnrcWn5O85A0h6dQB2gpwe7nUpR3MQ_V36F74wJtV8ckDannkLkrFwpd4waRcASOJ84AIXccCBLpRgX53-WI59RSKJvHmUkrqS_Yir61zfyuS-K_5hqy3iD14hPmGNs6HPggRqw1AybdBI-BQWyxnYcDp02jsYSmA1FeKxIC_e7PpqnJJzcPhZr2x"/><span class="font-title-md text-title-md text-primary tracking-tight font-semibold hidden sm:inline-block">FormPhoto Pro</span></div><div class="hidden xl:flex items-center gap-space-xs text-on-surface-variant font-data-mono-xs text-data-mono-xs bg-surface-container-low px-space-sm py-space-xs rounded"><span class="material-symbols-outlined text-[14px] text-outline">folder_open</span><span>Admission Session 2025</span><span class="text-outline">/</span><span class="text-on-surface">NEET-JEE-Passport Prep</span></div></div><div class="flex items-center gap-space-md"><div class="hidden lg:flex items-center gap-space-xs bg-surface-container px-space-sm py-space-xs rounded"><span class="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span><span class="font-data-mono-xs text-data-mono-xs text-secondary font-medium tracking-tight">Compliance Engine Active: Auto-Check 300 DPI</span></div><div class="hidden md:flex items-center bg-surface-container-lowest p-0.5 rounded border border-outline-variant/30"><button class="px-space-sm py-space-xs rounded bg-surface-variant text-on-surface font-label-md text-label-md transition-colors" type="button">Photo Mode</button><button class="px-space-sm py-space-xs rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-colors" type="button">Signature Mode</button></div><div class="relative hidden sm:block"><select aria-label="Photo format preset" class="bg-surface-container-low text-on-surface font-data-mono-sm text-data-mono-sm rounded px-space-md py-space-xs border border-outline-variant/40 focus:outline-none focus:border-primary cursor-pointer"><option>US Visa (2x2 in / 600x600 px)</option><option>Passport (35x45 mm / Schengen/UK)</option><option>NEET / JEE 2025 (3.5x4.5 cm)</option><option>Signature (140x60 px / 10-20 KB)</option><option>UPSC Civil Services (350x350 px)</option><option>Driving License (State Spec)</option></select></div><button class="h-8 px-space-md bg-primary text-on-primary font-label-md text-label-md font-medium rounded hover:bg-primary-fixed-dim transition-colors flex items-center gap-space-xs shrink-0" type="button"><span class="material-symbols-outlined text-[16px]">file_download</span><span>Export Spec</span></button><div class="shrink-0 pl-space-xs"><img alt="Profile" class="w-8 h-8 rounded-full object-cover ring-1 ring-outline-variant/40" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCSdVex5hMBijPjfSBumogXm5lLAsA5WNelNE27ao9cRXwDoOGfZTgfbgs-ylzfFEbtvkxdsVPHkc10li2iimp6jyNaaKkHp1rbHaXUDs6ooipPDrRKoybFjwlld_dS9Ao7RYR-Pu9_8UMBg4LIZYuFGfbeJ7g-bx7FLk_pIlJGEL495xviRJ4HDvNvVvWFgKYyT_yHRYfaMl5nmrVQ2F10ErNMAh13xueC7SE28sbQh7x7NVmf6Uw27A"/></div></div></div></header><aside class="fixed left-0 top-14 bottom-0 w-64 bg-surface-container-low z-40 flex flex-col justify-between py-space-lg"><div class="flex flex-col gap-space-md"><div class="px-space-lg"><span class="font-data-mono-xs text-data-mono-xs uppercase tracking-wider text-outline font-medium">Workspaces</span></div><nav class="flex flex-col gap-0.5 px-space-sm" data-active-classes="bg-surface-container-high text-primary font-medium"><a aria-current="page" class="flex items-center gap-space-md px-space-md py-space-sm rounded transition-colors bg-surface-container-high text-primary font-medium" data-path="precision-studio" href="#"><span class="material-symbols-outlined text-[18px]">crop_free</span><span class="font-title-sm text-title-sm">Precision Studio</span></a><a class="flex items-center gap-space-md px-space-md py-space-sm rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="batch-document-resizer" href="#"><span class="material-symbols-outlined text-[18px]">collections</span><span class="font-title-sm text-title-sm">Batch Document Resizer</span></a><a class="flex items-center gap-space-md px-space-md py-space-sm rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="compliance-ruleset-library" href="#"><span class="material-symbols-outlined text-[18px]">verified</span><span class="font-title-sm text-title-sm">Compliance Ruleset Library</span></a><a class="flex items-center gap-space-md px-space-md py-space-sm rounded text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors" data-path="export-history" href="#"><span class="material-symbols-outlined text-[18px]">history</span><span class="font-title-sm text-title-sm">Export History</span></a></nav></div><div class="px-space-md"><div class="bg-surface-container-lowest p-space-md rounded border border-outline-variant/20 flex flex-col gap-space-xs"><div class="flex items-center justify-between text-outline-variant font-data-mono-xs text-data-mono-xs"><span class="text-on-surface-variant">ICAO 9303 Core</span><span class="text-secondary">Ready</span></div><div class="w-full bg-surface-container-high h-1 rounded-full overflow-hidden"><div class="bg-secondary h-full w-full"></div></div><span class="font-data-mono-xs text-data-mono-xs text-outline text-[10px]">Sub-millimeter grid aligned</span></div></div></aside><div class="pl-64"><main class="w-full pt-14 min-h-screen bg-surface-container-lowest text-on-surface"><div class="flex flex-col w-full">
+<!-- TOP SUB-BAR & COMPLIANCE HUD -->
+<section class="w-full bg-surface-container-low px-space-lg py-space-sm shadow-sm flex flex-col gap-space-sm">
+<!-- Row 1: Workspace Mode & Verification Ribbon -->
+<div class="flex flex-wrap items-center justify-between gap-space-md">
+<!-- Mode Segmented Control -->
+<div class="flex items-center bg-surface-container-lowest p-0.5 rounded shadow-inner">
+<button class="flex items-center gap-space-xs px-space-md py-1 rounded bg-primary text-on-primary font-label-md text-label-md shadow-sm transition-all" id="mode-photo-btn">
+<span class="material-symbols-outlined text-[16px]">person</span>
+<span>Applicant Passport Photo</span>
+</button>
+<button class="flex items-center gap-space-xs px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all" id="mode-sig-btn">
+<span class="material-symbols-outlined text-[16px]">draw</span>
+<span>Signature Mode (B&amp;W High Contrast)</span>
+</button>
+</div>
+<!-- Realtime Compliance Status Ribbon -->
+<div class="flex items-center gap-space-md bg-surface-container px-space-md py-1 rounded">
+<div class="flex items-center gap-space-xs">
+<span class="flex h-2 w-2 relative">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-secondary opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-secondary"></span>
+</span>
+<span class="font-data-mono-xs text-data-mono-xs text-secondary font-medium tracking-tight uppercase">Passed Validation</span>
+</div>
+<div class="h-3 w-px bg-outline-variant/40"></div>
+<div class="flex items-center gap-space-sm font-data-mono-xs text-data-mono-xs text-on-surface">
+<span class="text-on-surface-variant">Standard:</span>
+<span class="font-medium text-primary-fixed">NTA / JEE 2025</span>
+<span class="text-outline">•</span>
+<span>300 DPI</span>
+<span class="text-outline">•</span>
+<span>7:9 (350×450 px)</span>
+<span class="text-outline">•</span>
+<span class="text-secondary font-medium">42.8 KB</span>
+<span class="text-on-surface-variant text-[9px]">(Limit: 50 KB max)</span>
+</div>
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">verified</span>
+</div>
+</div>
+<!-- Row 2: Standard Presets Strip -->
+<div class="flex items-center gap-space-xs overflow-x-auto pb-0.5 no-scrollbar">
+<span class="font-data-mono-xs text-data-mono-xs uppercase tracking-wider text-outline shrink-0 pr-space-xs">Presets:</span>
+<button class="preset-pill px-space-sm py-0.5 rounded text-left shrink-0 bg-primary-container/20 text-primary font-data-mono-xs text-data-mono-xs flex items-center gap-1.5 transition-colors">
+<span class="w-1.5 h-1.5 rounded-full bg-primary"></span>
+<span class="font-medium">NEET / JEE 2025</span>
+<span class="text-on-surface-variant opacity-80">(3.5×4.5 cm • 10–50 KB)</span>
+</button>
+<button class="preset-pill px-space-sm py-0.5 rounded text-left shrink-0 bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs flex items-center gap-1.5 transition-colors">
+<span class="font-medium">US Visa / OCI</span>
+<span class="text-outline opacity-80">(2×2 in • 600×600 px)</span>
+</button>
+<button class="preset-pill px-space-sm py-0.5 rounded text-left shrink-0 bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs flex items-center gap-1.5 transition-colors">
+<span class="font-medium">Passport Standard</span>
+<span class="text-outline opacity-80">(35×45 mm)</span>
+</button>
+<button class="preset-pill px-space-sm py-0.5 rounded text-left shrink-0 bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs flex items-center gap-1.5 transition-colors">
+<span class="font-medium">Govt Signature</span>
+<span class="text-outline opacity-80">(140×60 px • 10–20 KB)</span>
+</button>
+<button class="preset-pill px-space-sm py-0.5 rounded text-left shrink-0 bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs flex items-center gap-1.5 transition-colors">
+<span class="font-medium">State PSC / UPSC</span>
+<span class="text-outline opacity-80">(350×450 px)</span>
+</button>
+<button class="preset-pill px-space-sm py-0.5 rounded text-left shrink-0 bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs flex items-center gap-1.5 transition-colors">
+<span class="material-symbols-outlined text-[12px]">tune</span>
+<span>Custom Dimensions</span>
+</button>
+</div>
+</section>
+<!-- WORKSPACE BODY: 3-PANE ARCHITECTURE (Left Tool Drawer - Main Dual Canvas - Right Export Panel) -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-space-sm p-space-sm w-full">
+<!-- 1. LEFT TOOLBOX: TRANSFORM & BIOMETRIC NUMERICS (Cols 3 on desktop) -->
+<aside class="lg:col-span-3 flex flex-col gap-space-sm">
+<!-- Dimensions Card -->
+<div class="bg-surface-container-low rounded p-space-md flex flex-col gap-space-md shadow-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">aspect_ratio</span>
+<span class="font-title-sm text-title-sm text-on-surface">Target Geometry</span>
+</div>
+<span class="font-data-mono-xs text-data-mono-xs text-secondary bg-secondary-container/20 px-1.5 py-0.5 rounded">Locked 7:9</span>
+</div>
+<!-- Unit Selector -->
+<div class="grid grid-cols-4 gap-1 p-0.5 bg-surface-container-lowest rounded text-center">
+<button class="unit-btn active px-1 py-1 rounded bg-surface-variant text-primary font-data-mono-xs text-data-mono-xs font-medium">px</button>
+<button class="unit-btn px-1 py-1 rounded text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs">mm</button>
+<button class="unit-btn px-1 py-1 rounded text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs">cm</button>
+<button class="unit-btn px-1 py-1 rounded text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs">in</button>
+</div>
+<!-- Width / Height Inputs with Micro Scrubbers -->
+<div class="grid grid-cols-2 gap-space-sm items-center">
+<div class="flex flex-col gap-1">
+<label class="font-data-mono-xs text-data-mono-xs text-on-surface-variant flex justify-between">
+<span>Width (W)</span>
+<span class="text-outline">35 mm</span>
+</label>
+<div class="flex items-center bg-surface-container-lowest rounded px-space-sm py-1 focus-within:ring-1 focus-within:ring-primary">
+<input class="w-full bg-transparent text-on-surface font-data-mono-md text-data-mono-md focus:outline-none" id="input-w" type="number" value="350"/>
+<span class="text-outline font-data-mono-xs text-data-mono-xs">px</span>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<label class="font-data-mono-xs text-data-mono-xs text-on-surface-variant flex justify-between">
+<span>Height (H)</span>
+<span class="text-outline">45 mm</span>
+</label>
+<div class="flex items-center bg-surface-container-lowest rounded px-space-sm py-1 focus-within:ring-1 focus-within:ring-primary">
+<input class="w-full bg-transparent text-on-surface font-data-mono-md text-data-mono-md focus:outline-none" id="input-h" type="number" value="450"/>
+<span class="text-outline font-data-mono-xs text-data-mono-xs">px</span>
+</div>
+</div>
+</div>
+<!-- Quick Aspect Ratio Presets -->
+<div class="flex flex-col gap-1.5">
+<span class="font-data-mono-xs text-data-mono-xs text-outline uppercase tracking-wider">Aspect Lock</span>
+<div class="grid grid-cols-5 gap-1 text-center">
+<button class="py-1 rounded bg-surface-container text-on-surface-variant font-data-mono-xs text-data-mono-xs hover:bg-surface-variant">1:1</button>
+<button class="py-1 rounded bg-surface-container text-on-surface-variant font-data-mono-xs text-data-mono-xs hover:bg-surface-variant">3.5:4.5</button>
+<button class="py-1 rounded bg-primary-container text-on-primary-container font-data-mono-xs text-data-mono-xs font-medium">7:9</button>
+<button class="py-1 rounded bg-surface-container text-on-surface-variant font-data-mono-xs text-data-mono-xs hover:bg-surface-variant">2:3</button>
+<button class="py-1 rounded bg-surface-container text-on-surface-variant font-data-mono-xs text-data-mono-xs hover:bg-surface-variant">Custom</button>
+</div>
+</div>
+<!-- Output DPI Selector -->
+<div class="flex items-center justify-between pt-space-xs">
+<div class="flex flex-col">
+<span class="font-label-md text-label-md text-on-surface">Target DPI Density</span>
+<span class="font-data-mono-xs text-data-mono-xs text-on-surface-variant">Printing &amp; Konsular standard</span>
+</div>
+<div class="flex items-center bg-surface-container-lowest p-0.5 rounded">
+<button class="px-space-sm py-0.5 rounded text-on-surface-variant font-data-mono-xs text-data-mono-xs">72</button>
+<button class="px-space-sm py-0.5 rounded bg-surface-container-high text-primary font-data-mono-xs text-data-mono-xs font-semibold">300 DPI</button>
+</div>
+</div>
+</div>
+<!-- Biometric Alignment & Micro Positioning -->
+<div class="bg-surface-container-low rounded p-space-md flex flex-col gap-space-md shadow-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-secondary text-[18px]">straighten</span>
+<span class="font-title-sm text-title-sm text-on-surface">Biometric Alignment</span>
+</div>
+<button class="text-primary hover:text-primary-fixed font-data-mono-xs text-data-mono-xs flex items-center gap-0.5" id="btn-auto-center">
+<span class="material-symbols-outlined text-[14px]">auto_fix_high</span>
+<span>Auto Centering</span>
+</button>
+</div>
+<!-- 2D Offset Trackers -->
+<div class="grid grid-cols-2 gap-space-sm">
+<div class="flex flex-col gap-1">
+<span class="font-data-mono-xs text-data-mono-xs text-on-surface-variant">X-Offset</span>
+<div class="flex items-center justify-between bg-surface-container-lowest px-2 py-1 rounded">
+<button class="text-outline hover:text-on-surface text-[14px]">-</button>
+<span class="font-data-mono-xs text-data-mono-xs text-on-surface font-medium" id="x-offset-val">+12 px</span>
+<button class="text-outline hover:text-on-surface text-[14px]">+</button>
+</div>
+</div>
+<div class="flex flex-col gap-1">
+<span class="font-data-mono-xs text-data-mono-xs text-on-surface-variant">Y-Offset</span>
+<div class="flex items-center justify-between bg-surface-container-lowest px-2 py-1 rounded">
+<button class="text-outline hover:text-on-surface text-[14px]">-</button>
+<span class="font-data-mono-xs text-data-mono-xs text-on-surface font-medium" id="y-offset-val">-4 px</span>
+<button class="text-outline hover:text-on-surface text-[14px]">+</button>
+</div>
+</div>
+</div>
+<!-- Rotation Micro Dial -->
+<div class="flex flex-col gap-1">
+<div class="flex justify-between items-center font-data-mono-xs text-data-mono-xs">
+<span class="text-on-surface-variant">Level Rotation</span>
+<span class="text-primary font-medium" id="rot-val-display">0.0°</span>
+</div>
+<div class="flex items-center gap-space-xs">
+<button class="h-6 w-8 bg-surface-container-lowest hover:bg-surface-container text-on-surface-variant text-[11px] font-data-mono-xs rounded" id="rot-sub-90">-90°</button>
+<button class="h-6 w-8 bg-surface-container-lowest hover:bg-surface-container text-on-surface-variant text-[11px] font-data-mono-xs rounded" id="rot-sub-1">-1°</button>
+<input class="w-full accent-primary h-1 bg-surface-container-highest rounded cursor-pointer" id="rot-slider" max="15" min="-15" step="0.1" type="range" value="0"/>
+<button class="h-6 w-8 bg-surface-container-lowest hover:bg-surface-container text-on-surface-variant text-[11px] font-data-mono-xs rounded" id="rot-add-1">+1°</button>
+<button class="h-6 w-8 bg-surface-container-lowest hover:bg-surface-container text-on-surface-variant text-[11px] font-data-mono-xs rounded" id="rot-add-90">+90°</button>
+</div>
+</div>
+<!-- Scale Multiplier -->
+<div class="flex flex-col gap-1">
+<div class="flex justify-between items-center font-data-mono-xs text-data-mono-xs">
+<span class="text-on-surface-variant">Crop Scale Factor</span>
+<span class="text-secondary font-medium" id="scale-val-display">115%</span>
+</div>
+<input class="w-full accent-secondary h-1 bg-surface-container-highest rounded cursor-pointer" id="scale-slider" max="200" min="80" type="range" value="115"/>
+</div>
+<!-- Flip & Transform Shortcuts -->
+<div class="grid grid-cols-2 gap-space-sm pt-space-xs">
+<button class="h-8 flex items-center justify-center gap-space-xs bg-surface-container hover:bg-surface-variant rounded text-on-surface font-label-md text-label-md transition-colors">
+<span class="material-symbols-outlined text-[16px]">flip</span>
+<span>Mirror H</span>
+</button>
+<button class="h-8 flex items-center justify-center gap-space-xs bg-surface-container hover:bg-surface-variant rounded text-on-surface font-label-md text-label-md transition-colors">
+<span class="material-symbols-outlined text-[16px]">restart_alt</span>
+<span>Reset Guides</span>
+</button>
+</div>
+</div>
+<!-- Quick Biometric Guidance Card -->
+<div class="bg-surface-container-low rounded p-space-md flex flex-col gap-space-xs shadow-sm">
+<span class="font-data-mono-xs text-data-mono-xs uppercase tracking-wider text-outline">ICAO 9303 Requirement</span>
+<p class="font-body-sm text-body-sm text-on-surface-variant leading-relaxed">
+          Ensure crown-to-chin distance occupies <span class="text-on-surface font-medium">70% to 80%</span> of frame height. Keep head upright with direct camera gaze.
+        </p>
+</div>
+</aside>
+<!-- 2. CENTER CANVAS VIEWPORT: DUAL SPLIT / SIDE-BY-SIDE INSPECTOR (Cols 6 on desktop) -->
+<main class="lg:col-span-6 flex flex-col gap-space-sm">
+<!-- Viewer Controls Toolbar -->
+<div class="bg-surface-container-low rounded p-space-sm flex flex-wrap items-center justify-between gap-space-sm shadow-sm">
+<!-- Viewport Switcher -->
+<div class="flex items-center bg-surface-container-lowest p-0.5 rounded">
+<button class="px-space-sm py-1 rounded bg-surface-variant text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors" id="view-mode-dual">
+<span class="material-symbols-outlined text-[15px]">surfing</span>
+<span>Side-by-Side</span>
+</button>
+<button class="px-space-sm py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors" id="view-mode-split">
+<span class="material-symbols-outlined text-[15px]">compare</span>
+<span>Split Wipe</span>
+</button>
+<button class="px-space-sm py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors" id="view-mode-single">
+<span class="material-symbols-outlined text-[15px]">filter_center_focus</span>
+<span>Output Only</span>
+</button>
+</div>
+<!-- Zoom HUD & Tool Selector -->
+<div class="flex items-center gap-space-sm">
+<div class="flex items-center bg-surface-container-lowest px-1 py-0.5 rounded">
+<button class="w-6 h-6 flex items-center justify-center text-outline hover:text-on-surface transition-colors" id="btn-zoom-out">
+<span class="material-symbols-outlined text-[16px]">remove</span>
+</button>
+<span class="font-data-mono-xs text-data-mono-xs px-2 text-on-surface" id="canvas-zoom-txt">100%</span>
+<button class="w-6 h-6 flex items-center justify-center text-outline hover:text-on-surface transition-colors" id="btn-zoom-in">
+<span class="material-symbols-outlined text-[16px]">add</span>
+</button>
+</div>
+<button class="h-7 px-2 rounded bg-surface-container-lowest text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs flex items-center gap-1">
+<span class="material-symbols-outlined text-[14px]">fit_screen</span>
+<span class="hidden sm:inline">Fit</span>
+</button>
+<div class="h-4 w-px bg-outline-variant/30"></div>
+<!-- Hand Tool vs Marquee Tool -->
+<div class="flex items-center bg-surface-container-lowest p-0.5 rounded">
+<button class="w-6 h-6 rounded bg-primary text-on-primary flex items-center justify-center" title="Pan Hand Tool">
+<span class="material-symbols-outlined text-[14px]">pan_tool</span>
+</button>
+<button class="w-6 h-6 rounded text-on-surface-variant hover:text-on-surface flex items-center justify-center" title="Crop Marquee">
+<span class="material-symbols-outlined text-[14px]">crop</span>
+</button>
+</div>
+</div>
+</div>
+<!-- Canvas Stage Frame -->
+<div class="grid grid-cols-1 md:grid-cols-2 gap-space-sm flex-1 min-h-[520px]" id="dual-canvas-container">
+<!-- LEFT CANVAS: Original Uploaded Source -->
+<div class="relative bg-surface-container-lowest rounded overflow-hidden flex flex-col shadow-inner group">
+<!-- Tag Ribbon -->
+<div class="absolute top-2 left-2 z-20 flex items-center gap-1.5 bg-surface-container-lowest/80 backdrop-blur px-2 py-1 rounded text-on-surface font-data-mono-xs text-data-mono-xs shadow-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-outline"></span>
+<span class="font-medium">Original Source: 4032 × 3024 px</span>
+<span class="text-outline">3.4 MB</span>
+</div>
+<!-- Zoom overlay indicator -->
+<div class="absolute bottom-2 left-2 z-20 bg-surface-container-lowest/80 backdrop-blur px-2 py-0.5 rounded font-data-mono-xs text-data-mono-xs text-on-surface-variant">
+            Unprocessed Room BG
+          </div>
+<!-- Original Photo Stage with AI Detection Box -->
+<div class="w-full h-full relative flex items-center justify-center p-3 bg-[radial-gradient(#1f293d_1px,transparent_1px)] [background-size:16px_16px]">
+<div class="relative w-full max-w-[280px] aspect-[7/9] shadow-2xl rounded overflow-hidden">
+<img class="w-full h-full object-cover select-none" data-alt="Authentic unedited frontal portrait of an Asian student candidate sitting in a room with a textured apartment wall in background, neutral expression, casual blue t-shirt, well lit natural lighting for exam admission form verification" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAfRXU6OWpqIRTkKP7EMh_6U8VMGSbmJgwPkh0FxavDMLN8rf1588Uwq0mAjCar-Dhgz5JjDxnRcqxmAyKp8ZumqKvKhGkMESv57y_kkSxzTCHA3uuocsv3NnEDE1JQVK5GAGuIcrpQH2pPwO5dFN7jWt0K007tRaK3GrKPbmn_78wBjrzAmhYBcbCfNQi7KGe1bCRnHNcVVJ2FoKHmHzBJdnBeowuATt4uF6bMoqTl0m2ElQ_Vc0eT4w"/>
+<!-- AI Face Detection Bounding Box -->
+<div class="absolute inset-[15%_18%_25%_18%] border border-dashed border-tertiary-fixed rounded pointer-events-none flex flex-col justify-between p-1">
+<div class="flex justify-between items-start">
+<span class="bg-tertiary-container text-on-tertiary-container font-data-mono-xs text-[9px] px-1 rounded shadow">Subject Detected</span>
+<span class="material-symbols-outlined text-tertiary text-[14px]">face</span>
+</div>
+<div class="w-full flex justify-between items-center text-[9px] font-data-mono-xs text-tertiary-fixed-dim bg-surface-container-lowest/70 px-1 rounded">
+<span>82% fill</span>
+<span>Yaw: 0.2°</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- RIGHT CANVAS: Processed Admission Ready Preview -->
+<div class="relative bg-surface-container-lowest rounded overflow-hidden flex flex-col shadow-inner">
+<!-- Top Output Badge -->
+<div class="absolute top-2 left-2 z-20 flex items-center gap-1.5 bg-surface-container-lowest/90 backdrop-blur px-2 py-1 rounded text-on-surface font-data-mono-xs text-data-mono-xs shadow-sm">
+<span class="w-1.5 h-1.5 rounded-full bg-secondary"></span>
+<span class="font-medium text-secondary">Processed Output: 350 × 450 px</span>
+<span class="text-outline">42.8 KB</span>
+<span class="text-primary font-semibold">300 DPI</span>
+</div>
+<!-- Background Replacer Floating Bar -->
+<div class="absolute top-10 left-1/2 -translate-x-1/2 z-20 bg-surface-container-low/95 backdrop-blur-md px-space-md py-1 rounded-full shadow-lg flex items-center gap-space-sm border border-outline-variant/30">
+<button class="flex items-center gap-1 text-secondary font-data-mono-xs text-data-mono-xs">
+<span class="material-symbols-outlined text-[14px]">auto_videocam</span>
+<span>AI BG Cutout</span>
+</button>
+<div class="h-3 w-px bg-outline-variant/50"></div>
+<!-- Swatches -->
+<div class="flex items-center gap-1.5">
+<button class="w-4 h-4 rounded-full bg-[#38BDF8] ring-2 ring-primary ring-offset-1 ring-offset-surface-container-lowest transition-transform hover:scale-110" title="Sky Blue (NEET Standard)"></button>
+<button class="w-4 h-4 rounded-full bg-[#FFFFFF] transition-transform hover:scale-110" title="Pure White (US Visa/OCI)"></button>
+<button class="w-4 h-4 rounded-full bg-[#F1F5F9] transition-transform hover:scale-110" title="Off-White / Cream"></button>
+<button class="w-4 h-4 rounded-full bg-[conic-gradient(#64748b_25%,#334155_0_50%,#64748b_0_75%,#334155_0)] transition-transform hover:scale-110" title="Transparent / Alpha"></button>
+</div>
+</div>
+<!-- Stage Area with Processed Subject + Precision Rule Lines -->
+<div class="w-full h-full relative flex items-center justify-center p-3 bg-[radial-gradient(#1f293d_1px,transparent_1px)] [background-size:16px_16px]">
+<div class="relative w-full max-w-[280px] aspect-[7/9] shadow-2xl rounded overflow-hidden bg-[#38BDF8]" id="processed-crop-box">
+<!-- Processed Subject Cutout -->
+<img class="w-full h-full object-cover select-none pointer-events-none" data-alt="Cleanly isolated cutout portrait of an Asian applicant with pristine contours, neutral expression, looking straight into the camera, high resolution 300 DPI biometric passport quality on a vibrant sky blue background" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAvkJN6vq2wzcg6DIN-c1oqAQkk8L5nPdto1TFNDnL-VYKiCIioWGsYRZGN7fk0VcscEaK7BuIcBdS_ErEY_RJfmUrEdpnnmMDVxxJegYB3pwIOKI-P0c5i3ufmA4186Qil0x7DSKo6RskACZ6QijHKUU-SSLw6dhlvt-cPJMD2M7VDKbNKz2x4T_YZxGlvBRNL4iIN5Q-JUFzCSDV2TiGWuY5B0qq6SZKbTJ4j6Q0BxXiw5TXORrLSag"/>
+<!-- ICAO / NTA Precision Overlay Guides (Rule-of-Thirds & Eye/Chin Lines) -->
+<div class="absolute inset-0 pointer-events-none flex flex-col justify-between">
+<!-- 3x3 Grid Matrix -->
+<div class="w-full h-full grid grid-cols-3 grid-rows-3 opacity-25">
+<div class="border-r border-b border-primary"></div>
+<div class="border-r border-b border-primary"></div>
+<div class="border-b border-primary"></div>
+<div class="border-r border-b border-primary"></div>
+<div class="border-r border-b border-primary"></div>
+<div class="border-b border-primary"></div>
+<div class="border-r border-primary"></div>
+<div class="border-r border-primary"></div>
+<div></div>
+</div>
+<!-- Eye-Level Mandatory Zone Indicator -->
+<div class="absolute top-[42%] left-0 right-0 h-[1px] bg-secondary/80 flex items-center justify-between px-1">
+<span class="text-[8px] font-data-mono-xs text-secondary font-semibold bg-surface-container-lowest/80 px-1 rounded -translate-y-1/2">EYE LEVEL (56-60%)</span>
+<div class="h-1.5 w-1.5 rounded-full bg-secondary"></div>
+</div>
+<!-- Chin Guideline -->
+<div class="absolute bottom-[20%] left-0 right-0 h-[1px] bg-secondary/60 flex items-center justify-between px-1">
+<span class="text-[8px] font-data-mono-xs text-secondary/90 bg-surface-container-lowest/80 px-1 rounded -translate-y-1/2">CHIN LIMIT</span>
+<div class="h-1.5 w-1.5 rounded-full bg-secondary"></div>
+</div>
+<!-- Biometric Head Height Bracket Overlay -->
+<div class="absolute left-1 top-[15%] bottom-[20%] w-1.5 border-l-2 border-y-2 border-primary-container flex items-center">
+<span class="text-[8px] font-data-mono-xs text-primary-fixed bg-surface-container-lowest/90 px-0.5 rounded rotate-90 origin-left -translate-y-2 translate-x-2">72% FACE FILL</span>
+</div>
+</div>
+<!-- Corner Crop Reticles -->
+<div class="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-white pointer-events-none"></div>
+<div class="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-white pointer-events-none"></div>
+<div class="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-white pointer-events-none"></div>
+<div class="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-white pointer-events-none"></div>
+</div>
+</div>
+<!-- Bottom Status Pill -->
+<div class="absolute bottom-2 right-2 z-20 flex items-center gap-1 bg-surface-container-lowest/80 backdrop-blur px-2 py-0.5 rounded font-data-mono-xs text-data-mono-xs text-secondary">
+<span class="material-symbols-outlined text-[12px]">check_circle</span>
+<span>Aspect Ratio &amp; DPI Verified</span>
+</div>
+</div>
+</div>
+<!-- Lower Canvas Interaction Bar -->
+<div class="bg-surface-container-low rounded px-space-md py-space-sm flex flex-wrap items-center justify-between gap-space-sm text-on-surface-variant font-data-mono-xs text-data-mono-xs">
+<div class="flex items-center gap-space-md">
+<span class="flex items-center gap-1 text-on-surface">
+<span class="material-symbols-outlined text-[16px] text-primary">touch_app</span>
+<span>Direct Controls:</span>
+</span>
+<span>Drag to pan subject</span>
+<span class="text-outline">•</span>
+<span>Pinch/Scroll to zoom</span>
+<span class="text-outline">•</span>
+<span>Shift+Drag to lock axis</span>
+</div>
+<div class="flex items-center gap-space-xs text-secondary">
+<span class="material-symbols-outlined text-[15px]">verified_user</span>
+<span>Lossless Smart Resampler 4.0 Active</span>
+</div>
+</div>
+</main>
+<!-- 3. RIGHT PANEL: EXPORT OPTIMIZER & COMPLIANCE CRITERIA CHECKLIST (Cols 3 on desktop) -->
+<aside class="lg:col-span-3 flex flex-col gap-space-sm">
+<!-- File Size Optimizer Engine -->
+<div class="bg-surface-container-low rounded p-space-md flex flex-col gap-space-md shadow-sm">
+<div class="flex items-center justify-between pb-space-xs">
+<div class="flex items-center gap-space-xs">
+<span class="material-symbols-outlined text-primary text-[18px]">compress</span>
+<span class="font-title-sm text-title-sm text-on-surface">File Size Limiter</span>
+</div>
+<span class="text-secondary font-data-mono-xs text-data-mono-xs font-semibold">Strict 50 KB Cap</span>
+</div>
+<!-- Target Size Scrub Slider -->
+<div class="flex flex-col gap-1.5">
+<div class="flex justify-between items-center font-data-mono-xs text-data-mono-xs">
+<span class="text-on-surface-variant">Portal Max Limit:</span>
+<span class="font-data-mono-md text-data-mono-md text-primary font-bold">50 KB</span>
+</div>
+<input class="w-full accent-primary h-1 bg-surface-container-highest rounded cursor-pointer" id="size-cap-slider" max="200" min="10" type="range" value="50"/>
+<div class="flex justify-between text-[9px] text-outline font-data-mono-xs">
+<span>10 KB (Min)</span>
+<span>50 KB (JEE/NEET)</span>
+<span>100 KB</span>
+<span>200 KB</span>
+</div>
+</div>
+<!-- Realtime Size Meter Gauge -->
+<div class="bg-surface-container-lowest p-space-sm rounded flex flex-col gap-1">
+<div class="flex justify-between items-baseline">
+<span class="font-data-mono-xs text-data-mono-xs text-on-surface-variant">Calculated Export Weight:</span>
+<div class="flex items-baseline gap-1">
+<span class="font-data-mono-md text-title-sm text-secondary font-bold" id="output-kb-text">42.8</span>
+<span class="text-secondary font-data-mono-xs text-data-mono-xs">KB</span>
+</div>
+</div>
+<!-- Visual Threshold Gauge -->
+<div class="w-full h-2 bg-surface-container-high rounded-full overflow-hidden flex">
+<div class="h-full bg-secondary rounded-full transition-all duration-300" style="width: 85%;"></div>
+</div>
+<div class="flex justify-between items-center text-[10px] font-data-mono-xs text-secondary mt-0.5">
+<span class="flex items-center gap-0.5">
+<span class="material-symbols-outlined text-[11px]">check</span>
+<span>Within safe buffer (10 - 50 KB)</span>
+</span>
+<span class="text-outline">7.2 KB headroom</span>
+</div>
+</div>
+<!-- Smart JPEG Quality Subsampling Slider -->
+<div class="flex flex-col gap-1">
+<div class="flex justify-between items-center font-data-mono-xs text-data-mono-xs">
+<span class="text-on-surface-variant">Quality / Chroma Subsampling</span>
+<span class="text-on-surface font-medium">92% (Auto-Tuned)</span>
+</div>
+<input class="w-full accent-primary-container h-1 bg-surface-container-highest rounded cursor-pointer" max="100" min="60" type="range" value="92"/>
+</div>
+<!-- Format Selector -->
+<div class="flex flex-col gap-1.5">
+<span class="font-data-mono-xs text-data-mono-xs text-outline uppercase tracking-wider">Format Container</span>
+<div class="grid grid-cols-3 gap-1">
+<button class="py-1 px-1 rounded bg-primary text-on-primary font-data-mono-xs text-data-mono-xs font-semibold text-center shadow-sm">JPG/JPEG</button>
+<button class="py-1 px-1 rounded bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs text-center transition-colors">PNG</button>
+<button class="py-1 px-1 rounded bg-surface-container text-on-surface-variant hover:text-on-surface font-data-mono-xs text-data-mono-xs text-center transition-colors">WebP</button>
+</div>
+</div>
+<!-- EXIF Metadata Checkbox -->
+<label class="flex items-center gap-2 cursor-pointer pt-1">
+<input checked="" class="accent-primary rounded bg-surface-container-lowest w-3.5 h-3.5" type="checkbox"/>
+<span class="font-body-sm text-body-sm text-on-surface-variant select-none">Strip EXIF Data &amp; GPS (Portal safety)</span>
+</label>
+</div>
+<!-- Verification Checklist Box -->
+<div class="bg-surface-container-low rounded p-space-md flex flex-col gap-space-sm shadow-sm">
+<div class="flex items-center justify-between">
+<span class="font-title-sm text-title-sm text-on-surface">Portal Checklist</span>
+<span class="font-data-mono-xs text-data-mono-xs text-secondary bg-secondary-container/20 px-1.5 py-0.5 rounded">5/5 Passed</span>
+</div>
+<ul class="flex flex-col gap-1.5 font-body-sm text-body-sm text-on-surface">
+<li class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Head fill 70–80% of portrait</span>
+</li>
+<li class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Both ears &amp; eyes unobstructed</span>
+</li>
+<li class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Solid Sky Blue / White backdrop</span>
+</li>
+<li class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Size bounded: 10 KB to 50 KB</span>
+</li>
+<li class="flex items-center gap-2 text-on-surface">
+<span class="material-symbols-outlined text-secondary text-[16px]" style="font-variation-settings: 'FILL' 1;">check_circle</span>
+<span>Standard baseline JPEG encoded</span>
+</li>
+</ul>
+</div>
+<!-- Action Buttons Block -->
+<div class="flex flex-col gap-space-sm">
+<button class="w-full h-10 px-space-md bg-primary hover:bg-primary-fixed-dim text-on-primary font-label-md text-label-md font-semibold rounded flex items-center justify-center gap-space-xs shadow-md transition-all active:scale-[0.99]" id="btn-export-main">
+<span class="material-symbols-outlined text-[18px]">download_for_offline</span>
+<span>Download Admission Ready (42.8 KB)</span>
+</button>
+<div class="grid grid-cols-2 gap-space-xs">
+<button class="h-8 px-space-sm bg-surface-container hover:bg-surface-variant text-on-surface font-label-md text-label-md rounded flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[15px]">content_copy</span>
+<span>Copy Base64</span>
+</button>
+<button class="h-8 px-space-sm bg-surface-container hover:bg-surface-variant text-on-surface font-label-md text-label-md rounded flex items-center justify-center gap-1 transition-colors">
+<span class="material-symbols-outlined text-[15px]">share</span>
+<span>Send to Phone</span>
+</button>
+</div>
+</div>
+</aside>
+</div>
+</div>
+<!-- CLIENT-SIDE INTERACTIONS & HUD BEHAVIOR SCRIPT -->
+<script>
+  (function initPrecisionStudio() {
+    // Mode toggling
+    const photoBtn = document.getElementById('mode-photo-btn');
+    const sigBtn = document.getElementById('mode-sig-btn');
+    
+    if (photoBtn && sigBtn) {
+      photoBtn.addEventListener('click', () => {
+        photoBtn.className = 'flex items-center gap-space-xs px-space-md py-1 rounded bg-primary text-on-primary font-label-md text-label-md shadow-sm transition-all';
+        sigBtn.className = 'flex items-center gap-space-xs px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all';
+      });
+      sigBtn.addEventListener('click', () => {
+        sigBtn.className = 'flex items-center gap-space-xs px-space-md py-1 rounded bg-primary text-on-primary font-label-md text-label-md shadow-sm transition-all';
+        photoBtn.className = 'flex items-center gap-space-xs px-space-md py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md transition-all';
+      });
+    }
+
+    // Rotation slider sync
+    const rotSlider = document.getElementById('rot-slider');
+    const rotDisplay = document.getElementById('rot-val-display');
+    const rotSub1 = document.getElementById('rot-sub-1');
+    const rotAdd1 = document.getElementById('rot-add-1');
+    const rotSub90 = document.getElementById('rot-sub-90');
+    const rotAdd90 = document.getElementById('rot-add-90');
+
+    if (rotSlider && rotDisplay) {
+      const updateRot = (val) => {
+        rotSlider.value = val;
+        rotDisplay.textContent = (parseFloat(val) >= 0 ? '+' : '') + parseFloat(val).toFixed(1) + '°';
+      };
+      rotSlider.addEventListener('input', (e) => {
+        updateRot(e.target.value);
+      });
+      if (rotSub1) rotSub1.addEventListener('click', () => updateRot(Math.max(-15, parseFloat(rotSlider.value) - 1)));
+      if (rotAdd1) rotAdd1.addEventListener('click', () => updateRot(Math.min(15, parseFloat(rotSlider.value) + 1)));
+      if (rotSub90) rotSub90.addEventListener('click', () => updateRot(0));
+      if (rotAdd90) rotAdd90.addEventListener('click', () => updateRot(0));
+    }
+
+    // Scale slider sync
+    const scaleSlider = document.getElementById('scale-slider');
+    const scaleDisplay = document.getElementById('scale-val-display');
+    if (scaleSlider && scaleDisplay) {
+      scaleSlider.addEventListener('input', (e) => {
+        scaleDisplay.textContent = e.target.value + '%';
+      });
+    }
+
+    // Zoom Buttons
+    let currentZoom = 100;
+    const zoomTxt = document.getElementById('canvas-zoom-txt');
+    const zoomIn = document.getElementById('btn-zoom-in');
+    const zoomOut = document.getElementById('btn-zoom-out');
+
+    if (zoomIn && zoomOut && zoomTxt) {
+      zoomIn.addEventListener('click', () => {
+        currentZoom = Math.min(300, currentZoom + 10);
+        zoomTxt.textContent = currentZoom + '%';
+      });
+      zoomOut.addEventListener('click', () => {
+        currentZoom = Math.max(50, currentZoom - 10);
+        zoomTxt.textContent = currentZoom + '%';
+      });
+    }
+
+    // Max Size cap slider reactivity
+    const sizeCapSlider = document.getElementById('size-cap-slider');
+    const outputKbText = document.getElementById('output-kb-text');
+    if (sizeCapSlider && outputKbText) {
+      sizeCapSlider.addEventListener('input', (e) => {
+        const val = parseInt(e.target.value);
+        const tuned = (val * 0.85).toFixed(1);
+        outputKbText.textContent = tuned;
+      });
+    }
+
+    // View mode switching (Dual vs Single vs Split)
+    const viewDual = document.getElementById('view-mode-dual');
+    const viewSplit = document.getElementById('view-mode-split');
+    const viewSingle = document.getElementById('view-mode-single');
+    const dualContainer = document.getElementById('dual-canvas-container');
+
+    if (viewDual && viewSplit && viewSingle && dualContainer) {
+      const resetButtons = () => {
+        viewDual.className = 'px-space-sm py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors';
+        viewSplit.className = 'px-space-sm py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors';
+        viewSingle.className = 'px-space-sm py-1 rounded text-on-surface-variant hover:text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors';
+      };
+
+      viewDual.addEventListener('click', () => {
+        resetButtons();
+        viewDual.className = 'px-space-sm py-1 rounded bg-surface-variant text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors';
+        dualContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-space-sm flex-1 min-h-[520px]';
+        dualContainer.children[0].style.display = 'flex';
+        dualContainer.children[1].style.display = 'flex';
+      });
+
+      viewSingle.addEventListener('click', () => {
+        resetButtons();
+        viewSingle.className = 'px-space-sm py-1 rounded bg-surface-variant text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors';
+        dualContainer.className = 'grid grid-cols-1 gap-space-sm flex-1 min-h-[520px]';
+        dualContainer.children[0].style.display = 'none';
+        dualContainer.children[1].style.display = 'flex';
+      });
+
+      viewSplit.addEventListener('click', () => {
+        resetButtons();
+        viewSplit.className = 'px-space-sm py-1 rounded bg-surface-variant text-on-surface font-label-md text-label-md flex items-center gap-1 transition-colors';
+        dualContainer.className = 'grid grid-cols-1 md:grid-cols-2 gap-space-sm flex-1 min-h-[520px]';
+        dualContainer.children[0].style.display = 'flex';
+        dualContainer.children[1].style.display = 'flex';
+      });
+    }
+
+    // Auto Center button micro-interaction
+    const autoCenterBtn = document.getElementById('btn-auto-center');
+    if (autoCenterBtn) {
+      autoCenterBtn.addEventListener('click', () => {
+        const xOffset = document.getElementById('x-offset-val');
+        const yOffset = document.getElementById('y-offset-val');
+        if (xOffset) xOffset.textContent = '0 px';
+        if (yOffset) yOffset.textContent = '0 px';
+        autoCenterBtn.classList.add('text-secondary');
+        setTimeout(() => autoCenterBtn.classList.remove('text-secondary'), 800);
+      });
+    }
+  })();
+</script></main></div></body></html>
