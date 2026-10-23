@@ -1,7 +1,6 @@
 import { BG_TONE_HEX } from '../constants';
 import { TransformState } from '../types';
 import {
-  processPortraitHighQualityCutout,
   processSignatureAdaptiveInk,
   refineAlphaMatteAndDefringe,
 } from '../utils/bgRemoverCore';
@@ -35,12 +34,12 @@ export function loadImageElement(src: string): Promise<HTMLImageElement> {
 }
 
 /**
- * Helper to apply the exact same spatial crop/pan/rotate/flip transform to either the
- * source photo or its aligned neural segmentation mask canvas.
+ * Helper to apply the exact same spatial crop/pan/rotate/flip transform to the
+ * source photo, its cached transparent PNG `ImageBitmap`, or its aligned neural mask canvas.
  */
 function drawAlignedToOutputCanvas(
   targetCtx: CanvasRenderingContext2D,
-  drawable: HTMLImageElement | HTMLCanvasElement,
+  drawable: CanvasImageSource,
   srcW: number,
   srcH: number,
   outWidth: number,
@@ -98,10 +97,14 @@ function drawAlignedToOutputCanvas(
 
 /**
  * Renders the current TransformState onto an offscreen HTML5 canvas:
- * - In Photo mode with bgRemovalEnabled: applies the cached Neural Alpha Matte
- *   (from @imgly/background-removal) + Alpha Matte Edge Refinement (Choke -2px..+2px,
- *   Feather 0px..3px, and Halo Color Decontamination) before compositing onto the
- *   solid white (#ffffff) or sky blue (#38bdf8) admission backdrop.
+ * - In Photo mode with bgRemovalEnabled:
+ *   - Uses ONLY the cached transparent PNG `ImageBitmap` from `@imgly/background-removal@1.7.0`
+ *     (never custom RGB/LAB pixel-thresholding math).
+ *   - When Choke = 0 and Feather = 0, draws the cached `ImageBitmap` directly onto the output
+ *     canvas at 60fps.
+ *   - When Edge Choke (-2px..+2px) or Edge Feather (0px..3px) is non-zero, refines the cached
+ *     neural alpha matte before compositing onto the solid White (#ffffff), Sky Blue (#38bdf8),
+ *     or Custom admission backdrop.
  * - In Signature mode: runs O(N) Bradley-Roth Integral-Image Local Adaptive Thresholding
  *   (w = 24, t = 0.14) with "Preserve Original Blue/Black Ink vs. Pure Monochrome Black".
  */
@@ -161,25 +164,24 @@ export function renderProcessedOutput(
     ctx.clearRect(0, 0, outWidth, outHeight);
   }
 
-  const workCanvas = document.createElement('canvas');
-  workCanvas.width = outWidth;
-  workCanvas.height = outHeight;
-  const workCtx = workCanvas.getContext('2d');
   let usedNeuralMatte = false;
 
-  if (workCtx) {
-    drawAlignedToOutputCanvas(
-      workCtx,
-      sourceImage,
-      sourceImage.naturalWidth,
-      sourceImage.naturalHeight,
-      outWidth,
-      outHeight,
-      state
-    );
-
-    if (state.mode === 'signature') {
-      // Signature Mode: Never use Portrait AI model. Use O(N) Bradley-Roth Integral-Image Adaptive Thresholding
+  if (state.mode === 'signature') {
+    // Signature Mode: O(N) Bradley-Roth Integral-Image Adaptive Thresholding
+    const workCanvas = document.createElement('canvas');
+    workCanvas.width = outWidth;
+    workCanvas.height = outHeight;
+    const workCtx = workCanvas.getContext('2d');
+    if (workCtx) {
+      drawAlignedToOutputCanvas(
+        workCtx,
+        sourceImage,
+        sourceImage.naturalWidth,
+        sourceImage.naturalHeight,
+        outWidth,
+        outHeight,
+        state
+      );
       const imgData = workCtx.getImageData(0, 0, outWidth, outHeight);
       processSignatureAdaptiveInk(
         imgData.data,
@@ -191,11 +193,47 @@ export function renderProcessedOutput(
         24
       );
       workCtx.putImageData(imgData, 0, 0);
-    } else if (state.bgRemovalEnabled) {
-      const imgData = workCtx.getImageData(0, 0, outWidth, outHeight);
+      ctx.drawImage(workCanvas, 0, 0);
+    }
+  } else if (
+    state.bgRemovalEnabled &&
+    neuralMatte &&
+    neuralMatte.sourceSrc === sourceImage.src
+  ) {
+    // Photo Mode with Cached Neural ImageBitmap from @imgly/background-removal@1.7.0
+    usedNeuralMatte = true;
+    const chokePx = state.bgChokePx ?? 0;
+    const featherPx = state.bgFeather ?? 0;
 
-      if (neuralMatte && neuralMatte.sourceSrc === sourceImage.src) {
-        // Render aligned neural alpha mask at output resolution
+    if (chokePx === 0 && featherPx === 0) {
+      // Fast 60fps direct GPU composite of cached transparent PNG ImageBitmap
+      drawAlignedToOutputCanvas(
+        ctx,
+        neuralMatte.imageBitmap,
+        neuralMatte.width,
+        neuralMatte.height,
+        outWidth,
+        outHeight,
+        state
+      );
+    } else if (chokePx === 0 && featherPx > 0) {
+      // Fast 60fps canvas-filtered feather or refined alpha composite using cached ImageBitmap
+      const workCanvas = document.createElement('canvas');
+      workCanvas.width = outWidth;
+      workCanvas.height = outHeight;
+      const workCtx = workCanvas.getContext('2d');
+      if (workCtx) {
+        drawAlignedToOutputCanvas(
+          workCtx,
+          sourceImage,
+          sourceImage.naturalWidth,
+          sourceImage.naturalHeight,
+          outWidth,
+          outHeight,
+          state
+        );
+        const imgData = workCtx.getImageData(0, 0, outWidth, outHeight);
+
         const maskWork = document.createElement('canvas');
         maskWork.width = outWidth;
         maskWork.height = outHeight;
@@ -203,7 +241,7 @@ export function renderProcessedOutput(
         if (maskCtx) {
           drawAlignedToOutputCanvas(
             maskCtx,
-            neuralMatte.maskCanvas,
+            neuralMatte.imageBitmap,
             neuralMatte.width,
             neuralMatte.height,
             outWidth,
@@ -216,33 +254,81 @@ export function renderProcessedOutput(
           for (let i = 0; i < numPixels; i++) {
             baseAlpha[i] = maskImgData.data[i * 4 + 3];
           }
-
           refineAlphaMatteAndDefringe(
             imgData.data,
             baseAlpha,
             outWidth,
             outHeight,
-            state.bgChokePx ?? 0,
-            state.bgFeather ?? 1.5
+            0,
+            featherPx
           );
           workCtx.putImageData(imgData, 0, 0);
-          usedNeuralMatte = true;
         }
-      } else {
-        // Instant synchronous fallback while neural mask is computing or if offline
-        processPortraitHighQualityCutout(
-          imgData.data,
+        ctx.drawImage(workCanvas, 0, 0);
+      }
+    } else {
+      // Edge Choke / Defringe (-2px to +2px) + Feather (0px to 3px) refinement on cached neural matte
+      const workCanvas = document.createElement('canvas');
+      workCanvas.width = outWidth;
+      workCanvas.height = outHeight;
+      const workCtx = workCanvas.getContext('2d');
+      if (workCtx) {
+        drawAlignedToOutputCanvas(
+          workCtx,
+          sourceImage,
+          sourceImage.naturalWidth,
+          sourceImage.naturalHeight,
           outWidth,
           outHeight,
-          state.bgTolerance,
-          state.bgFeather ?? 1.5,
-          state.bgChokePx ?? 0
+          state
         );
-        workCtx.putImageData(imgData, 0, 0);
+        const imgData = workCtx.getImageData(0, 0, outWidth, outHeight);
+
+        const maskWork = document.createElement('canvas');
+        maskWork.width = outWidth;
+        maskWork.height = outHeight;
+        const maskCtx = maskWork.getContext('2d');
+        if (maskCtx) {
+          drawAlignedToOutputCanvas(
+            maskCtx,
+            neuralMatte.imageBitmap,
+            neuralMatte.width,
+            neuralMatte.height,
+            outWidth,
+            outHeight,
+            state
+          );
+          const maskImgData = maskCtx.getImageData(0, 0, outWidth, outHeight);
+          const numPixels = outWidth * outHeight;
+          const baseAlpha = new Uint8Array(numPixels);
+          for (let i = 0; i < numPixels; i++) {
+            baseAlpha[i] = maskImgData.data[i * 4 + 3];
+          }
+          refineAlphaMatteAndDefringe(
+            imgData.data,
+            baseAlpha,
+            outWidth,
+            outHeight,
+            chokePx,
+            featherPx
+          );
+          workCtx.putImageData(imgData, 0, 0);
+        }
+        ctx.drawImage(workCanvas, 0, 0);
       }
     }
-
-    ctx.drawImage(workCanvas, 0, 0);
+  } else {
+    // Photo Mode with BG Cutout OFF or while neural segmentation is actively downloading/computing:
+    // Draw aligned original sourceImage cleanly (NEVER run custom RGB pixel-thresholding math)
+    drawAlignedToOutputCanvas(
+      ctx,
+      sourceImage,
+      sourceImage.naturalWidth,
+      sourceImage.naturalHeight,
+      outWidth,
+      outHeight,
+      state
+    );
   }
 
   // Encode and binary-search quality to respect targetCapKb

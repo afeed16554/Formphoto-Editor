@@ -12,6 +12,7 @@ import {
   clearCachedNeuralMatte,
   getCachedNeuralMatte,
   NeuralMattingProgress,
+  NeuralModelTier,
   runNeuralPortraitMatting,
   subscribeNeuralProgress,
 } from './services/neuralBgRemover';
@@ -54,7 +55,7 @@ const INITIAL_STATE: TransformState = {
   bgRemovalEnabled: true,
   bgTolerance: 30,
   bgChokePx: 0,
-  bgFeather: 1.5,
+  bgFeather: 0,
   sigHighContrast: false,
   sigInkColorMode: 'original',
   sigThreshold: 14, // Calibrated Bradley-Roth t = 0.14 (with w = 24)
@@ -86,6 +87,8 @@ function triggerDataUrlDownload(dataUrl: string, filename: string): void {
 class FormPhotoProStudio {
   private state: TransformState = { ...INITIAL_STATE };
   private rawImageEl: HTMLImageElement | null = null;
+  private rawImageBlob: Blob | null = null;
+  private neuralModelTier: NeuralModelTier = 'isnet_quint8';
   private customUploadedFile: {
     name: string;
     sizeKb: number;
@@ -157,12 +160,23 @@ class FormPhotoProStudio {
     ) {
       return;
     }
-    const existing = getCachedNeuralMatte(this.rawImageEl);
-    if (existing) return;
-
-    void runNeuralPortraitMatting(this.rawImageEl, () => {
+    const existing = getCachedNeuralMatte(
+      this.rawImageEl,
+      this.neuralModelTier
+    );
+    if (existing) {
       this.runPipelineAndSyncUI();
-    });
+      return;
+    }
+
+    void runNeuralPortraitMatting(
+      this.rawImageEl,
+      this.rawImageBlob,
+      this.neuralModelTier,
+      () => {
+        this.runPipelineAndSyncUI();
+      }
+    );
   }
 
   private syncNeuralProgressUI(prog: NeuralMattingProgress): void {
@@ -179,18 +193,20 @@ class FormPhotoProStudio {
     if (detailEl) detailEl.textContent = prog.detailText;
     if (barEl) {
       const pct =
-        prog.status === 'idle'
+        prog.status === 'idle' || prog.status === 'ready'
           ? 100
-          : Math.max(6, Math.min(100, prog.progressPct));
+          : Math.max(5, Math.min(100, prog.progressPct));
       barEl.style.width = `${pct}%`;
     }
     if (badgeEl) {
       badgeEl.textContent =
         prog.status === 'downloading' || prog.status === 'inferring'
           ? `${prog.progressPct}%`
-          : prog.cachedInIndexedDB
-            ? 'IDB CACHED'
-            : 'READY';
+          : prog.status === 'ready'
+            ? '60FPS BITMAP'
+            : prog.status === 'error'
+              ? 'RETRY'
+              : 'READY';
     }
     if (canvasOverlay && canvasOverlayText) {
       const isBusy =
@@ -216,13 +232,13 @@ class FormPhotoProStudio {
     }
     this.renderDebounceTimer = window.setTimeout(() => {
       this.runPipelineAndSyncUI();
-    }, 18);
+    }, 16);
   }
 
   private runPipelineAndSyncUI(): void {
     const neuralMatte =
       this.state.mode === 'photo' && this.state.bgRemovalEnabled
-        ? getCachedNeuralMatte(this.rawImageEl)
+        ? getCachedNeuralMatte(this.rawImageEl, this.neuralModelTier)
         : null;
     const result = renderProcessedOutput(
       this.state,
@@ -242,6 +258,7 @@ class FormPhotoProStudio {
       URL.revokeObjectURL(this.customUploadedFile.url);
     }
     clearCachedNeuralMatte();
+    this.rawImageBlob = file;
 
     const objectUrl = URL.createObjectURL(file);
     const img = new Image();
@@ -273,6 +290,7 @@ class FormPhotoProStudio {
     clearCachedNeuralMatte();
     this.customUploadedFile = null;
     this.rawImageEl = null;
+    this.rawImageBlob = null;
     this.runPipelineAndSyncUI();
     this.showToast('Cleared image from browser memory.');
   }
@@ -518,16 +536,26 @@ class FormPhotoProStudio {
             <!-- Portrait Neural AI Progress Bar & Alpha Matte Edge Refinement Sliders -->
             <div id="portrait-matting-controls" class="flex flex-col gap-2.5 pt-1.5 border-t border-[var(--m3-outline-variant)]">
               
-              <!-- Real-Time Neural Model Download / IndexedDB Caching Progress Box -->
-              <div id="neural-progress-container" class="m3-surface-1 rounded-xl p-2 border border-[var(--m3-outline-variant)]">
+              <!-- Two-Tier Commercial-Grade Neural Engine Selector -->
+              <div class="grid grid-cols-2 gap-1 bg-[var(--m3-surface-1)] p-1 rounded-xl border border-[var(--m3-outline-variant)]">
+                <button id="btn-neural-tier-quint8" type="button" class="m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition m3-primary shadow-sm" title="Default Engine: @imgly/background-removal@1.7.0 (isnet_quint8)">
+                  ISNet Quint8 (Default)
+                </button>
+                <button id="btn-neural-tier-fp16" type="button" class="m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition m3-text-muted hover:text-m3-text" title="Studio Pro Tier: @imgly/background-removal@1.7.0 (isnet_fp16)">
+                  ISNet FP16 (Studio Pro)
+                </button>
+              </div>
+
+              <!-- Real-Time Neural Model Download / Processing Progress Box -->
+              <div id="neural-progress-container" class="m3-surface-1 rounded-xl p-2 border border-[var(--m3-outline-variant)] cursor-pointer" title="Click to re-run neural segmentation">
                 <div class="flex items-center justify-between gap-1 mb-1">
                   <span id="neural-stage-label" class="text-[10px] font-mono font-bold text-m3-primary truncate">ISNet Neural Matting Ready</span>
-                  <span id="neural-idb-badge" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold shrink-0">IDB CACHE</span>
+                  <span id="neural-idb-badge" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold shrink-0">READY</span>
                 </div>
                 <div class="w-full h-1.5 rounded-full bg-[var(--m3-surface-2)] overflow-hidden">
                   <div id="neural-progress-bar" class="h-full m3-primary transition-all duration-200" style="width: 100%;"></div>
                 </div>
-                <span id="neural-stage-detail" class="text-[9px] font-mono m3-text-muted mt-1 block truncate">@imgly/background-removal • 100% Local</span>
+                <span id="neural-stage-detail" class="text-[9px] font-mono m3-text-muted mt-1 block truncate">@imgly/background-removal@1.7.0 • 100% On-Device</span>
               </div>
 
               <!-- Alpha Matte Edge Refinement Sliders: Edge Choke / Defringe (-2px to +2px) & Edge Feather (0px to 3px) -->
@@ -546,9 +574,9 @@ class FormPhotoProStudio {
                 <div>
                   <div class="flex justify-between items-center mb-1">
                     <label for="slider-bg-feather" class="text-[10px] font-semibold m3-text-muted" title="Soften alpha boundary before compositing (0px to 3px)">Edge Feather</label>
-                    <span id="val-bg-feather" class="font-mono text-[10px] font-bold">1.5 px</span>
+                    <span id="val-bg-feather" class="font-mono text-[10px] font-bold">0 px</span>
                   </div>
-                  <input id="slider-bg-feather" type="range" min="0" max="3" step="0.5" value="1.5" class="m3-slider" />
+                  <input id="slider-bg-feather" type="range" min="0" max="3" step="0.5" value="0" class="m3-slider" />
                   <div class="flex justify-between text-[8px] font-mono m3-text-muted mt-0.5">
                     <span>0px Sharp</span>
                     <span>3px Soft</span>
@@ -1341,6 +1369,26 @@ class FormPhotoProStudio {
       this.state.sigThreshold = v;
     });
 
+    // Two-Tier Neural Engine Selector buttons
+    const setNeuralTier = (tier: NeuralModelTier) => {
+      this.neuralModelTier = tier;
+      this.syncNeuralTierButtons();
+      this.triggerNeuralMattingIfNeeded();
+      this.schedulePipelineUpdate(true);
+    };
+
+    document
+      .getElementById('btn-neural-tier-quint8')
+      ?.addEventListener('click', () => setNeuralTier('isnet_quint8'));
+    document
+      .getElementById('btn-neural-tier-fp16')
+      ?.addEventListener('click', () => setNeuralTier('isnet_fp16'));
+    document
+      .getElementById('neural-progress-container')
+      ?.addEventListener('click', () => {
+        this.triggerNeuralMattingIfNeeded();
+      });
+
     // Signature Ink Color Mode Toggle ("Original Blue/Black" vs "Pure Mono Black")
     const setSigInkMode = (mode: SigInkColorMode) => {
       this.state.sigInkColorMode = mode;
@@ -1375,7 +1423,7 @@ class FormPhotoProStudio {
       this.state.rotationDeg = 0;
       this.state.qualityPct = 90;
       this.state.bgChokePx = 0;
-      this.state.bgFeather = 1.5;
+      this.state.bgFeather = 0;
       this.schedulePipelineUpdate(true);
       this.showToast('Reset crop and edge parameters.');
     });
@@ -1590,10 +1638,25 @@ class FormPhotoProStudio {
     }
   }
 
+  private syncNeuralTierButtons(): void {
+    const btnQ8 = document.getElementById('btn-neural-tier-quint8');
+    const btnFp16 = document.getElementById('btn-neural-tier-fp16');
+    if (btnQ8 && btnFp16) {
+      const isQ8 = this.neuralModelTier === 'isnet_quint8';
+      btnQ8.className = `m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition ${
+        isQ8 ? 'm3-primary shadow-sm' : 'm3-text-muted hover:text-m3-text'
+      }`;
+      btnFp16.className = `m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition ${
+        !isQ8 ? 'm3-primary shadow-sm' : 'm3-text-muted hover:text-m3-text'
+      }`;
+    }
+  }
+
   private syncDynamicDOM(result: ProcessedExportResult): void {
     const preset = this.getActivePreset();
     this.renderPresetChips();
     this.syncThemeButtons();
+    this.syncNeuralTierButtons();
     this.syncDimensionInputsFromPx();
     this.syncViewModeLayout();
 

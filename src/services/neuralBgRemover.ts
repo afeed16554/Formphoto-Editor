@@ -1,9 +1,11 @@
 /**
- * On-Device Neural Portrait Matting Engine
- * - Uses @imgly/background-removal (https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm)
- *   with IndexedDB weight chunk caching ("FormPhotoNeuralWeightsDB") and fallback support for
- *   @huggingface/transformers (briaai/RMBG-1.4).
- * - Runs 100% locally in the browser (WebGPU / WASM) with real-time progress reporting.
+ * Two-Tier Commercial-Grade On-Device Neural Portrait Matting Engine
+ * - Tier 1 (Default): @imgly/background-removal@1.7.0 (`isnet_quint8` quantized neural model)
+ * - Tier 2 (Studio Pro): @imgly/background-removal@1.7.0 (`isnet_fp16` half-precision neural model)
+ * - Passes the uploaded image Blob directly into `removeBackground(blob, { model, progress })`
+ * - Caches the returned transparent PNG `ImageBitmap` in memory so changing Backdrop Fill colors
+ *   (White, Sky Blue, Custom), Zoom, Pan, Rotate, or Edge Feather re-renders instantaneously at 60fps
+ *   without re-running the model.
  */
 
 export type NeuralMattingStatus =
@@ -11,8 +13,9 @@ export type NeuralMattingStatus =
   | 'downloading'
   | 'inferring'
   | 'ready'
-  | 'fallback'
   | 'error';
+
+export type NeuralModelTier = 'isnet_quint8' | 'isnet_fp16';
 
 export interface NeuralMattingProgress {
   status: NeuralMattingStatus;
@@ -21,10 +24,13 @@ export interface NeuralMattingProgress {
   detailText: string;
   cachedInIndexedDB: boolean;
   engineName: string;
+  modelTier: NeuralModelTier;
 }
 
 export interface CachedNeuralMatte {
   sourceSrc: string;
+  modelTier: NeuralModelTier;
+  imageBitmap: ImageBitmap | HTMLCanvasElement;
   maskCanvas: HTMLCanvasElement;
   width: number;
   height: number;
@@ -33,148 +39,30 @@ export interface CachedNeuralMatte {
 
 type ProgressListener = (state: NeuralMattingProgress) => void;
 
-const IDB_NAME = 'FormPhotoNeuralWeightsDB';
-const IDB_STORE = 'weight_chunks_v1';
-const IMGLY_ESM_URL =
+const IMGLY_ESM_URL_PRIMARY =
+  'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm';
+const IMGLY_ESM_URL_FALLBACK =
   'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.5.5/+esm';
-const IMGLY_PUBLIC_PATH =
-  'https://staticimgly.com/@imgly/background-removal-data/1.5.5/dist/';
 
-let idbPromise: Promise<IDBDatabase | null> | null = null;
-let fetchInterceptorInstalled = false;
-let anyChunkServedFromIdb = false;
-
-function openWeightsIdb(): Promise<IDBDatabase | null> {
-  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
-  if (idbPromise) return idbPromise;
-
-  idbPromise = new Promise((resolve) => {
-    try {
-      const req = indexedDB.open(IDB_NAME, 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(IDB_STORE)) {
-          db.createObjectStore(IDB_STORE);
-        }
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
-  return idbPromise;
-}
-
-async function idbGetBlob(key: string): Promise<ArrayBuffer | null> {
-  const db = await openWeightsIdb();
-  if (!db) return null;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction(IDB_STORE, 'readonly');
-      const store = tx.objectStore(IDB_STORE);
-      const req = store.get(key);
-      req.onsuccess = () => {
-        const res = req.result;
-        resolve(res instanceof ArrayBuffer ? res : null);
-      };
-      req.onerror = () => resolve(null);
-    } catch {
-      resolve(null);
-    }
-  });
-}
-
-async function idbPutBlob(key: string, buffer: ArrayBuffer): Promise<void> {
-  const db = await openWeightsIdb();
-  if (!db) return;
-  return new Promise((resolve) => {
-    try {
-      const tx = db.transaction(IDB_STORE, 'readwrite');
-      const store = tx.objectStore(IDB_STORE);
-      store.put(buffer, key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-    } catch {
-      resolve();
-    }
-  });
-}
-
-/**
- * Installs a transparent fetch wrapper for @imgly/background-removal-data and HuggingFace RMBG-1.4
- * model weight URLs so model weights are persisted in IndexedDB across browser sessions.
- */
-function ensureIndexedDbWeightCacheInterceptor(): void {
-  if (fetchInterceptorInstalled || typeof window === 'undefined') return;
-  fetchInterceptorInstalled = true;
-
-  const originalFetch = window.fetch.bind(window);
-  window.fetch = async (
-    input: RequestInfo | URL,
-    init?: RequestInit
-  ): Promise<Response> => {
-    const urlStr =
-      typeof input === 'string'
-        ? input
-        : input instanceof URL
-          ? input.toString()
-          : input.url;
-
-    const isNeuralWeightAsset =
-      urlStr.includes('staticimgly.com/@imgly/background-removal-data/') ||
-      urlStr.includes('huggingface.co/briaai/RMBG-1.4/');
-
-    if (!isNeuralWeightAsset) {
-      return originalFetch(input, init);
-    }
-
-    const cachedBuffer = await idbGetBlob(urlStr);
-    if (cachedBuffer && cachedBuffer.byteLength > 0) {
-      anyChunkServedFromIdb = true;
-      const contentType = urlStr.endsWith('.json')
-        ? 'application/json'
-        : urlStr.endsWith('.wasm')
-          ? 'application/wasm'
-          : 'application/octet-stream';
-      return new Response(cachedBuffer, {
-        status: 200,
-        headers: { 'Content-Type': contentType },
-      });
-    }
-
-    const networkRes = await originalFetch(input, init);
-    if (networkRes.ok) {
-      try {
-        const cloneBuf = await networkRes.clone().arrayBuffer();
-        if (cloneBuf.byteLength > 0) {
-          void idbPutBlob(urlStr, cloneBuf);
-        }
-      } catch {
-        // Ignore storage quota errors
-      }
-    }
-    return networkRes;
-  };
-}
-
-// Dynamic ESM loader that bypasses Vite static bundling rewrite
+// Dynamic ESM loader that bypasses static bundler rewriting so CDN ESM loads natively in browser
 const dynamicImportEsm = new Function(
   'moduleUrl',
   'return import(moduleUrl)'
 ) as (moduleUrl: string) => Promise<Record<string, unknown>>;
 
 let cachedMatte: CachedNeuralMatte | null = null;
-let activeJobSrc: string | null = null;
+let activeJobKey: string | null = null;
+let modelWeightsCachedInSession = false;
 const listeners = new Set<ProgressListener>();
 
 let currentProgress: NeuralMattingProgress = {
   status: 'idle',
   progressPct: 0,
-  stageLabel: 'Neural AI Matting Ready',
-  detailText: 'ISNet Neural Matting (IndexedDB Cached)',
+  stageLabel: 'ISNet Neural Matting Ready',
+  detailText: '@imgly/background-removal@1.7.0 • 100% On-Device',
   cachedInIndexedDB: false,
-  engineName: 'ISNet (@imgly/background-removal)',
+  engineName: 'ISNet Quint8 (@imgly/background-removal@1.7.0)',
+  modelTier: 'isnet_quint8',
 };
 
 export function subscribeNeuralProgress(fn: ProgressListener): () => void {
@@ -191,60 +79,83 @@ function emitProgress(next: Partial<NeuralMattingProgress>): void {
 }
 
 export function getCachedNeuralMatte(
-  sourceImage: HTMLImageElement | null
+  sourceImage: HTMLImageElement | null,
+  modelTier: NeuralModelTier = 'isnet_quint8'
 ): CachedNeuralMatte | null {
   if (!sourceImage || !cachedMatte) return null;
-  if (cachedMatte.sourceSrc === sourceImage.src) {
+  if (
+    cachedMatte.sourceSrc === sourceImage.src &&
+    cachedMatte.modelTier === modelTier
+  ) {
     return cachedMatte;
   }
   return null;
 }
 
 export function clearCachedNeuralMatte(): void {
+  if (
+    cachedMatte?.imageBitmap &&
+    typeof (cachedMatte.imageBitmap as ImageBitmap).close === 'function'
+  ) {
+    try {
+      (cachedMatte.imageBitmap as ImageBitmap).close();
+    } catch {
+      // Ignore bitmap close errors
+    }
+  }
   cachedMatte = null;
-  activeJobSrc = null;
+  activeJobKey = null;
 }
 
 /**
- * Converts an HTMLImageElement to a resized PNG Blob (max 640px on longest edge for fast, crisp
- * on-device neural segmentation without blocking UI frames).
+ * Fallback helper: converts an HTMLImageElement to a PNG Blob ONLY when no raw File/Blob was provided.
  */
-async function imageToInputBlob(
-  img: HTMLImageElement
-): Promise<{ blob: Blob; width: number; height: number }> {
-  const maxDim = 640;
+async function imageElementToBlob(img: HTMLImageElement): Promise<Blob> {
   const natW = Math.max(1, img.naturalWidth || img.width);
   const natH = Math.max(1, img.naturalHeight || img.height);
-  const scale = Math.min(1, maxDim / Math.max(natW, natH));
-  const w = Math.max(16, Math.round(natW * scale));
-  const h = Math.max(16, Math.round(natH * scale));
-
   const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
+  c.width = natW;
+  c.height = natH;
   const ctx = c.getContext('2d');
   if (ctx) {
-    ctx.drawImage(img, 0, 0, w, h);
+    ctx.drawImage(img, 0, 0, natW, natH);
   }
-
-  const blob = await new Promise<Blob>((resolve, reject) => {
+  return new Promise<Blob>((resolve, reject) => {
     c.toBlob((b) => {
       if (b) resolve(b);
-      else reject(new Error('Failed to encode input image blob'));
+      else reject(new Error('Failed to encode image element to Blob'));
     }, 'image/png');
   });
-
-  return { blob, width: w, height: h };
 }
 
 /**
- * Extracts an alpha mask canvas (where R=G=B=255 and A=foreground alpha) from a segmented PNG Blob.
+ * Decodes the transparent PNG Blob returned by `@imgly/background-removal` into both:
+ * 1. An in-memory `ImageBitmap` for instant 60fps GPU canvas rendering (`ctx.drawImage(imageBitmap, ...)`).
+ * 2. An offscreen `maskCanvas` for optional Edge Choke / Defringe (-2px..+2px) and Edge Feather (0px..3px) refinement.
  */
-async function blobToMaskCanvas(
-  segmentedBlob: Blob,
-  targetW: number,
-  targetH: number
-): Promise<HTMLCanvasElement> {
+async function decodeSegmentedBlobToBitmapAndCanvas(
+  segmentedBlob: Blob
+): Promise<{
+  imageBitmap: ImageBitmap | HTMLCanvasElement;
+  maskCanvas: HTMLCanvasElement;
+  width: number;
+  height: number;
+}> {
+  if (typeof createImageBitmap === 'function') {
+    const bitmap = await createImageBitmap(segmentedBlob);
+    const width = Math.max(1, bitmap.width);
+    const height = Math.max(1, bitmap.height);
+    const maskCanvas = document.createElement('canvas');
+    maskCanvas.width = width;
+    maskCanvas.height = height;
+    const ctx = maskCanvas.getContext('2d');
+    if (ctx) {
+      ctx.drawImage(bitmap, 0, 0, width, height);
+    }
+    return { imageBitmap: bitmap, maskCanvas, width, height };
+  }
+
+  // Fallback for environments without createImageBitmap
   const url = URL.createObjectURL(segmentedBlob);
   try {
     const segImg = await new Promise<HTMLImageElement>((resolve, reject) => {
@@ -253,83 +164,119 @@ async function blobToMaskCanvas(
       im.onerror = (e) => reject(e);
       im.src = url;
     });
-
+    const width = Math.max(1, segImg.naturalWidth || segImg.width);
+    const height = Math.max(1, segImg.naturalHeight || segImg.height);
     const maskCanvas = document.createElement('canvas');
-    maskCanvas.width = targetW;
-    maskCanvas.height = targetH;
+    maskCanvas.width = width;
+    maskCanvas.height = height;
     const ctx = maskCanvas.getContext('2d');
     if (ctx) {
-      ctx.drawImage(segImg, 0, 0, targetW, targetH);
+      ctx.drawImage(segImg, 0, 0, width, height);
     }
-    return maskCanvas;
+    return { imageBitmap: maskCanvas, maskCanvas, width, height };
   } finally {
     URL.revokeObjectURL(url);
   }
 }
 
+async function loadRemoveBackgroundFn(): Promise<
+  (image: Blob, config?: Record<string, unknown>) => Promise<Blob>
+> {
+  try {
+    const mod = await dynamicImportEsm(IMGLY_ESM_URL_PRIMARY);
+    const fn = (mod.removeBackground ?? mod.default) as
+      | ((image: Blob, config?: Record<string, unknown>) => Promise<Blob>)
+      | undefined;
+    if (typeof fn === 'function') {
+      return fn;
+    }
+  } catch (err) {
+    console.warn(
+      '@imgly/background-removal@1.7.0 failed to import, trying @1.5.5 fallback:',
+      err
+    );
+  }
+
+  const fallbackMod = await dynamicImportEsm(IMGLY_ESM_URL_FALLBACK);
+  const fallbackFn = (fallbackMod.removeBackground ?? fallbackMod.default) as
+    | ((image: Blob, config?: Record<string, unknown>) => Promise<Blob>)
+    | undefined;
+  if (typeof fallbackFn !== 'function') {
+    throw new Error(
+      'removeBackground export not found in @imgly/background-removal'
+    );
+  }
+  return fallbackFn;
+}
+
 /**
- * Runs on-device neural portrait background removal using @imgly/background-removal@1.5.5
- * (with IndexedDB weight caching and real-time download/inference progress bar).
+ * Runs 100% on-device neural portrait background removal using `@imgly/background-removal@1.7.0`.
+ * Passes the uploaded image `Blob` directly into `removeBackground(blob, { model, progress })`
+ * and caches the returned transparent PNG `ImageBitmap` in memory for 60fps re-rendering.
  */
 export async function runNeuralPortraitMatting(
   sourceImage: HTMLImageElement,
+  sourceBlob?: Blob | null,
+  modelTier: NeuralModelTier = 'isnet_quint8',
   onComplete?: (matte: CachedNeuralMatte | null) => void
 ): Promise<CachedNeuralMatte | null> {
   const srcKey = sourceImage.src;
   if (!srcKey) return null;
 
-  if (cachedMatte && cachedMatte.sourceSrc === srcKey) {
+  const jobKey = `${srcKey}::${modelTier}`;
+  if (
+    cachedMatte &&
+    cachedMatte.sourceSrc === srcKey &&
+    cachedMatte.modelTier === modelTier
+  ) {
     emitProgress({
       status: 'ready',
       progressPct: 100,
-      stageLabel: 'Neural Alpha Matte Active',
-      detailText: `${cachedMatte.engineName} • IndexedDB Ready`,
+      stageLabel: 'Neural Cutout Cached (60fps)',
+      detailText: `${cachedMatte.engineName} • ImageBitmap in Memory`,
       cachedInIndexedDB: true,
+      modelTier,
     });
     onComplete?.(cachedMatte);
     return cachedMatte;
   }
 
-  if (activeJobSrc === srcKey) {
+  if (activeJobKey === jobKey) {
     return null;
   }
 
-  activeJobSrc = srcKey;
-  ensureIndexedDbWeightCacheInterceptor();
+  activeJobKey = jobKey;
+  const tierLabel =
+    modelTier === 'isnet_fp16' ? 'ISNet FP16 Studio Pro' : 'ISNet Quint8 Neural';
 
   emitProgress({
     status: 'downloading',
-    progressPct: 8,
-    stageLabel: 'Loading Neural Matting Engine…',
-    detailText: 'Initializing @imgly/background-removal (ISNet) in IndexedDB',
-    cachedInIndexedDB: anyChunkServedFromIdb,
-    engineName: 'ISNet Neural Matting',
+    progressPct: 5,
+    stageLabel: `Loading ${tierLabel} (5%)`,
+    detailText: 'Importing @imgly/background-removal@1.7.0…',
+    cachedInIndexedDB: modelWeightsCachedInSession,
+    engineName: tierLabel,
+    modelTier,
   });
 
   try {
-    const { blob, width, height } = await imageToInputBlob(sourceImage);
-    const imglyMod = await dynamicImportEsm(IMGLY_ESM_URL);
-    const removeBackgroundFn = imglyMod.removeBackground as (
-      image: Blob,
-      config?: Record<string, unknown>
-    ) => Promise<Blob>;
-
-    if (typeof removeBackgroundFn !== 'function') {
-      throw new Error('removeBackground export not found in @imgly/background-removal');
-    }
+    const inputBlob = sourceBlob ?? (await imageElementToBlob(sourceImage));
+    const removeBackground = await loadRemoveBackgroundFn();
 
     const downloadTotals = new Map<string, { cur: number; tot: number }>();
 
-    const segmentedBlob = await removeBackgroundFn(blob, {
-      model: 'isnet_quint8',
-      publicPath: IMGLY_PUBLIC_PATH,
+    const segmentedBlob = await removeBackground(inputBlob, {
+      model: modelTier,
       output: {
         format: 'image/png',
         quality: 1.0,
       },
       progress: (key: string, current: number, total: number) => {
         if (key.startsWith('fetch:')) {
-          downloadTotals.set(key, { cur: current, tot: Math.max(1, total) });
+          downloadTotals.set(key, {
+            cur: Math.max(0, current),
+            tot: Math.max(1, total),
+          });
           let sumCur = 0;
           let sumTot = 0;
           for (const item of downloadTotals.values()) {
@@ -337,67 +284,94 @@ export async function runNeuralPortraitMatting(
             sumTot += item.tot;
           }
           const ratio = sumTot > 0 ? Math.min(1, sumCur / sumTot) : 0.5;
-          const pct = Math.round(10 + ratio * 62);
+          const pct = Math.max(6, Math.min(72, Math.round(6 + ratio * 66)));
           const mbCur = (sumCur / (1024 * 1024)).toFixed(1);
           const mbTot = (sumTot / (1024 * 1024)).toFixed(1);
 
           emitProgress({
             status: 'downloading',
             progressPct: pct,
-            stageLabel: anyChunkServedFromIdb
-              ? `Loading Cached Weights from IndexedDB (${pct}%)`
-              : `Caching Neural Weights in IndexedDB (${pct}%)`,
-            detailText: `${mbCur} / ${mbTot} MB • ISNet Portrait Model`,
-            cachedInIndexedDB: anyChunkServedFromIdb,
+            stageLabel: modelWeightsCachedInSession
+              ? `Loading Neural Model: ${pct}%`
+              : `Downloading Neural Model: ${pct}%`,
+            detailText:
+              sumTot > 10000
+                ? `${mbCur} / ${mbTot} MB • ${tierLabel}`
+                : `${tierLabel} (@imgly/background-removal@1.7.0)`,
+            cachedInIndexedDB: modelWeightsCachedInSession,
+            modelTier,
           });
         } else if (key.startsWith('compute:')) {
-          const stepPct = total > 0 ? Math.round((current / total) * 25) : 15;
-          const pct = Math.min(98, 72 + stepPct);
+          modelWeightsCachedInSession = true;
+          const ratio = total > 0 ? Math.min(1, current / total) : 0.6;
+          const pct = Math.max(74, Math.min(99, Math.round(74 + ratio * 25)));
           emitProgress({
             status: 'inferring',
             progressPct: pct,
-            stageLabel: `Segmenting Portrait Foreground (${pct}%)`,
+            stageLabel: `Segmenting Portrait: ${pct}%`,
             detailText:
               key === 'compute:inference'
-                ? 'Running on-device neural alpha matting…'
-                : 'Extracting high-precision hair & shoulder alpha matte…',
+                ? `Running ${tierLabel} neural segmentation…`
+                : 'Decoding transparent PNG ImageBitmap…',
             cachedInIndexedDB: true,
+            modelTier,
           });
         }
       },
     });
 
-    const maskCanvas = await blobToMaskCanvas(segmentedBlob, width, height);
+    modelWeightsCachedInSession = true;
+    const decoded = await decodeSegmentedBlobToBitmapAndCanvas(segmentedBlob);
+
+    // Release previous cached ImageBitmap if any
+    if (
+      cachedMatte?.imageBitmap &&
+      typeof (cachedMatte.imageBitmap as ImageBitmap).close === 'function'
+    ) {
+      try {
+        (cachedMatte.imageBitmap as ImageBitmap).close();
+      } catch {
+        // Ignore
+      }
+    }
+
     const result: CachedNeuralMatte = {
       sourceSrc: srcKey,
-      maskCanvas,
-      width,
-      height,
-      engineName: 'ISNet Neural Matting',
+      modelTier,
+      imageBitmap: decoded.imageBitmap,
+      maskCanvas: decoded.maskCanvas,
+      width: decoded.width,
+      height: decoded.height,
+      engineName: tierLabel,
     };
 
     cachedMatte = result;
-    activeJobSrc = null;
+    activeJobKey = null;
 
     emitProgress({
       status: 'ready',
       progressPct: 100,
-      stageLabel: 'Neural Alpha Matte Active',
-      detailText: 'Weights cached in IndexedDB • Choke & Feather live',
+      stageLabel: 'Neural Cutout Ready (100%)',
+      detailText: `${tierLabel} • ImageBitmap Cached (60fps)`,
       cachedInIndexedDB: true,
+      modelTier,
     });
 
     onComplete?.(result);
     return result;
   } catch (err) {
-    console.warn('Primary ISNet neural matting fallback triggered:', err);
-    activeJobSrc = null;
+    console.error('On-device neural background removal error:', err);
+    activeJobKey = null;
     emitProgress({
-      status: 'fallback',
-      progressPct: 100,
-      stageLabel: 'Local CIE LAB + Sobel Edge Matting Active',
-      detailText: 'Offline fallback active • Choke & Feather live',
+      status: 'error',
+      progressPct: 0,
+      stageLabel: 'Neural Model Load Error — Click Retry',
+      detailText:
+        err instanceof Error
+          ? err.message
+          : 'Check network connection to load @imgly/background-removal@1.7.0',
       cachedInIndexedDB: false,
+      modelTier,
     });
     onComplete?.(null);
     return null;
