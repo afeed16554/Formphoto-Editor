@@ -26,11 +26,3 @@ The production build outputs static, relative-path assets (`base: './'`) to `dis
 - **Cloudflare Pages / Netlify / Vercel / Firebase Hosting**
 - Any static subfolder or root web server
 
-## Deploying to GitHub Pages
-
-This repository includes `.github/workflows/deploy.yml` and `public/.nojekyll` pre-configured:
-
-1. Push this repository to GitHub (`main` or `master` branch).
-2. In your GitHub repository, navigate to **Settings → Pages**.
-3. Under **Build and deployment → Source**, select **GitHub Actions**.
-4. The workflow will automatically build and publish your site to GitHub Pages on every push.
