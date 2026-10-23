@@ -1,62 +1,819 @@
 /**
- * Production Studio Alpha Matte Edge Refinement (Choke / Defringe -2px..+2px & Feather 0px..3px),
- * Bradley-Roth O(N) Integral-Image Local Adaptive Signature Isolation (w = 24, t = 0.14),
- * and CIE LAB + Sobel fallback matting engine.
- * Runs 100% locally on RGBA Uint8ClampedArray pixel buffers.
+ * AFEED Admission Photo Studio — Continuous Alpha Matting & Refinement Core
+ *
+ * Implements:
+ * 1. Zero legacy RGB/LAB/HSL portrait pixel-thresholding fallbacks.
+ * 2. Pre-clipped Transparent PNG Auto-Detector (`hasPreClippedTransparency`).
+ * 3. Aspect-Preserving Letterbox Unpadding & Bilinear Continuous Mask Interpolation
+ *    (`unpadAndResizeAlphaBilinear`).
+ * 4. 4-Stage Configurable & Non-Destructive Continuous Alpha Refinement (`refineContinuousAlphaMatte`):
+ *    - Stage A: Foreground/background confidence window (`lowConfidenceCut`, `highConfidenceCut`)
+ *    - Stage B: Edge-aware boundary refinement (`chokePx`, `featherPx` restricted to boundary zone)
+ *    - Stage C: Smart enclosed-hole classification (distinguishes internal shirt/skin/lip defects
+ *      from genuine gaps between arms/torso, fingers, and glasses lenses using neighborhood color
+ *      evidence, raw model confidence, and region geometry)
+ *    - Stage D: Conservative isolated exterior speckle cleanup (`speckleCleanupStrength`)
+ * 5. Quantitative Alpha Matte Diagnostics (`computeAlphaMatteDiagnostics` + Ground-Truth IoU / F1 / MAE).
+ * 6. O(N) Bradley-Roth Integral-Image Local Adaptive Signature Isolation (`processSignatureAdaptiveInk`).
  */
 
-export interface LabColor {
-  l: number;
-  a: number;
-  b: number;
-  r: number;
-  g: number;
-  bl: number;
+export type HoleFillMode = 'smart' | 'off' | 'aggressive';
+
+export interface AlphaRefinementConfig {
+  lowConfidenceCut: number; // Default 18 (0..60)
+  highConfidenceCut: number; // Default 230 (180..254)
+  holeFillMode: HoleFillMode; // Default 'smart'
+  speckleCleanupStrength: number; // Default 50 (0..100)
+  chokePx: number; // -2..+2
+  featherPx: number; // 0..3
+  bypassRefinement?: boolean; // True to inspect unrefined raw neural mask
+}
+
+export const DEFAULT_ALPHA_REFINEMENT_CONFIG: AlphaRefinementConfig = {
+  lowConfidenceCut: 18,
+  highConfidenceCut: 230,
+  holeFillMode: 'smart',
+  speckleCleanupStrength: 50,
+  chokePx: 0,
+  featherPx: 0,
+  bypassRefinement: false,
+};
+
+export interface AlphaMatteDiagnostics {
+  backgroundSpeckleCount: number;
+  foregroundHoleCount: number;
+  boundarySmoothnessPct: number;
+  foregroundCoveragePct: number;
+  iouPct?: number;
+  boundaryF1Pct?: number;
+  maePct?: number;
 }
 
 /**
- * Fast sRGB (0..255) to perceptual CIE LAB conversion.
+ * Fast scan of an RGBA pixel buffer to detect whether the uploaded or pasted image
+ * ALREADY contains a pre-clipped transparent background (e.g. Samsung Gallery Image Clipper
+ * or iOS Sticker transparent PNG).
  */
-export function rgbToLab(r: number, g: number, b: number): LabColor {
-  let rn = r / 255;
-  let gn = g / 255;
-  let bn = b / 255;
+export function hasPreClippedTransparency(
+  rgbaData: Uint8ClampedArray,
+  width: number,
+  height: number
+): boolean {
+  const numPixels = width * height;
+  if (numPixels === 0) return false;
 
-  rn = rn > 0.04045 ? Math.pow((rn + 0.055) / 1.055, 2.4) : rn / 12.92;
-  gn = gn > 0.04045 ? Math.pow((gn + 0.055) / 1.055, 2.4) : gn / 12.92;
-  bn = bn > 0.04045 ? Math.pow((bn + 0.055) / 1.055, 2.4) : bn / 12.92;
+  let transparentCount = 0;
+  let opaqueCount = 0;
+  const stepX = Math.max(1, Math.floor(width / 32));
+  const stepY = Math.max(1, Math.floor(height / 32));
 
-  const x = (rn * 0.4124 + gn * 0.3576 + bn * 0.1805) / 0.95047;
-  const y = (rn * 0.2126 + gn * 0.7152 + bn * 0.0722) / 1.0;
-  const z = (rn * 0.0193 + gn * 0.1192 + bn * 0.9505) / 1.08883;
+  for (let y = 0; y < height; y += stepY) {
+    for (let x = 0; x < width; x += stepX) {
+      const a = rgbaData[(y * width + x) * 4 + 3];
+      if (a < 245) {
+        transparentCount++;
+      } else if (a >= 250) {
+        opaqueCount++;
+      }
+    }
+  }
 
-  const fx = x > 0.008856 ? Math.cbrt(x) : 7.787 * x + 16 / 116;
-  const fy = y > 0.008856 ? Math.cbrt(y) : 7.787 * y + 16 / 116;
-  const fz = z > 0.008856 ? Math.cbrt(z) : 7.787 * z + 16 / 116;
+  const corners = [
+    0,
+    width - 1,
+    (height - 1) * width,
+    (height - 1) * width + (width - 1),
+  ];
+  for (const idx of corners) {
+    if (idx >= 0 && idx < numPixels && rgbaData[idx * 4 + 3] < 245) {
+      transparentCount += 2;
+    }
+  }
 
-  return {
-    l: 116 * fy - 16,
-    a: 500 * (fx - fy),
-    b: 200 * (fy - fz),
-    r,
-    g,
-    bl: b,
+  return transparentCount >= 2 && opaqueCount >= 4;
+}
+
+/**
+ * Computes aspect-preserving letterbox geometry for a source image `(srcW, srcH)`
+ * inside a square model input of `targetSize × targetSize`.
+ */
+export interface LetterboxGeometry {
+  targetSize: number;
+  scaledW: number;
+  scaledH: number;
+  padLeft: number;
+  padTop: number;
+}
+
+export function computeLetterboxGeometry(
+  srcW: number,
+  srcH: number,
+  targetSize: number
+): LetterboxGeometry {
+  const safeW = Math.max(1, srcW);
+  const safeH = Math.max(1, srcH);
+  const scale = Math.min(targetSize / safeW, targetSize / safeH);
+  const scaledW = Math.max(1, Math.min(targetSize, Math.round(safeW * scale)));
+  const scaledH = Math.max(1, Math.min(targetSize, Math.round(safeH * scale)));
+  const padLeft = Math.floor((targetSize - scaledW) / 2);
+  const padTop = Math.floor((targetSize - scaledH) / 2);
+  return { targetSize, scaledW, scaledH, padLeft, padTop };
+}
+
+/**
+ * Unpads a predicted square alpha mask `(predW × predH)` using the recorded letterbox geometry
+ * and resizes the active region back to the original image dimensions `(origW × origH)`
+ * using continuous bilinear interpolation.
+ */
+export function unpadAndResizeAlphaBilinear(
+  predAlpha: Uint8Array | Uint8ClampedArray | Float32Array,
+  predW: number,
+  predH: number,
+  origW: number,
+  origH: number,
+  letterbox?: LetterboxGeometry | null
+): Uint8Array {
+  const out = new Uint8Array(origW * origH);
+  if (origW <= 0 || origH <= 0 || predW <= 0 || predH <= 0) return out;
+
+  const activeLeft = letterbox
+    ? (letterbox.padLeft / letterbox.targetSize) * predW
+    : 0;
+  const activeTop = letterbox
+    ? (letterbox.padTop / letterbox.targetSize) * predH
+    : 0;
+  const activeW = letterbox
+    ? (letterbox.scaledW / letterbox.targetSize) * predW
+    : predW;
+  const activeH = letterbox
+    ? (letterbox.scaledH / letterbox.targetSize) * predH
+    : predH;
+
+  for (let y = 0; y < origH; y++) {
+    const v = origH > 1 ? y / (origH - 1) : 0;
+    const srcY = Math.max(
+      0,
+      Math.min(predH - 1, activeTop + v * Math.max(1, activeH - 1))
+    );
+    const y0 = Math.floor(srcY);
+    const y1 = Math.min(predH - 1, y0 + 1);
+    const wy = srcY - y0;
+
+    const rowOut = y * origW;
+    const row0 = y0 * predW;
+    const row1 = y1 * predW;
+
+    for (let x = 0; x < origW; x++) {
+      const u = origW > 1 ? x / (origW - 1) : 0;
+      const srcX = Math.max(
+        0,
+        Math.min(predW - 1, activeLeft + u * Math.max(1, activeW - 1))
+      );
+      const x0 = Math.floor(srcX);
+      const x1 = Math.min(predW - 1, x0 + 1);
+      const wx = srcX - x0;
+
+      const p00 = predAlpha[row0 + x0];
+      const p10 = predAlpha[row0 + x1];
+      const p01 = predAlpha[row1 + x0];
+      const p11 = predAlpha[row1 + x1];
+
+      const topVal = p00 * (1 - wx) + p10 * wx;
+      const botVal = p01 * (1 - wx) + p11 * wx;
+      const val = topVal * (1 - wy) + botVal * wy;
+      out[rowOut + x] = Math.max(0, Math.min(255, Math.round(val)));
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Computes objective quantitative diagnostics on an alpha mask:
+ * - `backgroundSpeckleCount`: disconnected exterior foreground islands (`alpha >= 24`)
+ * - `foregroundHoleCount`: enclosed low-alpha pockets (`alpha < 210`) inside the silhouette
+ * - `boundarySmoothnessPct`: smoothness of alpha transitions along the silhouette boundary
+ * - Optional ground-truth `iouPct`, `boundaryF1Pct`, and `maePct` when `groundTruthAlpha` is supplied.
+ */
+export function computeAlphaMatteDiagnostics(
+  alpha: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  groundTruthAlpha?: Uint8Array | Uint8ClampedArray | null
+): AlphaMatteDiagnostics {
+  const total = width * height;
+  if (total === 0) {
+    return {
+      backgroundSpeckleCount: 0,
+      foregroundHoleCount: 0,
+      boundarySmoothnessPct: 100,
+      foregroundCoveragePct: 0,
+    };
+  }
+
+  // 1. Count connected foreground components (alpha >= 24)
+  const visitedFg = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let fgComponentCount = 0;
+  let fgPixels = 0;
+
+  for (let i = 0; i < total; i++) {
+    if (alpha[i] >= 128) fgPixels++;
+    if (alpha[i] >= 24 && visitedFg[i] === 0) {
+      fgComponentCount++;
+      let head = 0;
+      let tail = 0;
+      visitedFg[i] = 1;
+      queue[tail++] = i;
+      while (head < tail) {
+        const curr = queue[head++];
+        const cx = curr % width;
+        const cy = (curr - cx) / width;
+        if (cx > 0) {
+          const n = curr - 1;
+          if (!visitedFg[n] && alpha[n] >= 24) {
+            visitedFg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+        if (cx + 1 < width) {
+          const n = curr + 1;
+          if (!visitedFg[n] && alpha[n] >= 24) {
+            visitedFg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+        if (cy > 0) {
+          const n = curr - width;
+          if (!visitedFg[n] && alpha[n] >= 24) {
+            visitedFg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+        if (cy + 1 < height) {
+          const n = curr + width;
+          if (!visitedFg[n] && alpha[n] >= 24) {
+            visitedFg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+      }
+    }
+  }
+
+  const backgroundSpeckleCount = Math.max(0, fgComponentCount - 1);
+
+  // 2. Count enclosed low-alpha holes inside foreground (alpha < 210 not touching image border)
+  const visitedBg = new Uint8Array(total);
+  let foregroundHoleCount = 0;
+  for (let i = 0; i < total; i++) {
+    if (alpha[i] < 210 && visitedBg[i] === 0) {
+      let head = 0;
+      let tail = 0;
+      let touchesBorder = false;
+      visitedBg[i] = 1;
+      queue[tail++] = i;
+      while (head < tail) {
+        const curr = queue[head++];
+        const cx = curr % width;
+        const cy = (curr - cx) / width;
+        if (cx === 0 || cx === width - 1 || cy === 0 || cy === height - 1) {
+          touchesBorder = true;
+        }
+        if (cx > 0) {
+          const n = curr - 1;
+          if (!visitedBg[n] && alpha[n] < 210) {
+            visitedBg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+        if (cx + 1 < width) {
+          const n = curr + 1;
+          if (!visitedBg[n] && alpha[n] < 210) {
+            visitedBg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+        if (cy > 0) {
+          const n = curr - width;
+          if (!visitedBg[n] && alpha[n] < 210) {
+            visitedBg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+        if (cy + 1 < height) {
+          const n = curr + width;
+          if (!visitedBg[n] && alpha[n] < 210) {
+            visitedBg[n] = 1;
+            queue[tail++] = n;
+          }
+        }
+      }
+      if (!touchesBorder) {
+        foregroundHoleCount++;
+      }
+    }
+  }
+
+  // 3. Boundary smoothness score along silhouette edge
+  let boundaryCount = 0;
+  let smoothSum = 0;
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = y * width + x;
+      const a = alpha[i];
+      const n1 = alpha[i - 1];
+      const n2 = alpha[i + 1];
+      const n3 = alpha[i - width];
+      const n4 = alpha[i + width];
+      const maxDiff = Math.max(
+        Math.abs(a - n1),
+        Math.abs(a - n2),
+        Math.abs(a - n3),
+        Math.abs(a - n4)
+      );
+      if (maxDiff > 15) {
+        boundaryCount++;
+        const laplacian = Math.abs(4 * a - (n1 + n2 + n3 + n4)) / 4;
+        smoothSum += Math.max(0, 1 - laplacian / 255);
+      }
+    }
+  }
+  const boundarySmoothnessPct =
+    boundaryCount > 0 ? Math.round((smoothSum / boundaryCount) * 100) : 96;
+  const foregroundCoveragePct = Number(((fgPixels / total) * 100).toFixed(1));
+
+  const diag: AlphaMatteDiagnostics = {
+    backgroundSpeckleCount,
+    foregroundHoleCount,
+    boundarySmoothnessPct,
+    foregroundCoveragePct,
   };
+
+  if (groundTruthAlpha && groundTruthAlpha.length === total) {
+    let intersection = 0;
+    let union = 0;
+    let absDiffSum = 0;
+    let gtBoundary = 0;
+    let predBoundary = 0;
+    let matchedBoundary = 0;
+
+    for (let i = 0; i < total; i++) {
+      const p = alpha[i] >= 128;
+      const g = groundTruthAlpha[i] >= 128;
+      if (p && g) intersection++;
+      if (p || g) union++;
+      absDiffSum += Math.abs(alpha[i] - groundTruthAlpha[i]) / 255;
+    }
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const i = y * width + x;
+        const pEdge =
+          Math.abs(alpha[i] - alpha[i - 1]) > 35 ||
+          Math.abs(alpha[i] - alpha[i - width]) > 35;
+        const gEdge =
+          Math.abs(groundTruthAlpha[i] - groundTruthAlpha[i - 1]) > 35 ||
+          Math.abs(groundTruthAlpha[i] - groundTruthAlpha[i - width]) > 35;
+        if (pEdge) predBoundary++;
+        if (gEdge) gtBoundary++;
+        if (pEdge && gEdge) matchedBoundary++;
+      }
+    }
+
+    diag.iouPct =
+      union > 0 ? Number(((intersection / union) * 100).toFixed(1)) : 100;
+    const prec = predBoundary > 0 ? matchedBoundary / predBoundary : 1;
+    const rec = gtBoundary > 0 ? matchedBoundary / gtBoundary : 1;
+    diag.boundaryF1Pct =
+      prec + rec > 0
+        ? Number((((2 * prec * rec) / (prec + rec)) * 100).toFixed(1))
+        : 100;
+    diag.maePct = Number(((absDiffSum / total) * 100).toFixed(2));
+  }
+
+  return diag;
 }
 
 /**
- * Perceptual color distance in CIE LAB space that tolerates lighting/shadow gradients
- * on studio walls while remaining highly sensitive to chromatic shifts (skin, hair, clothes).
+ * Flood-fills from the 4 outer borders of the photo across transparent pixels (`alpha < 128`)
+ * to identify the true exterior background. Used when `holeFillMode === 'aggressive'` or in unit tests.
  */
-export function labDistanceShadowAware(c1: LabColor, c2: LabColor): number {
-  const dl = (c1.l - c2.l) * 0.58;
-  const da = (c1.a - c2.a) * 1.35;
-  const db = (c1.b - c2.b) * 1.35;
-  return Math.sqrt(dl * dl + da * da + db * db);
+export function fillInteriorHolesOnAlpha(
+  alpha: Uint8Array,
+  width: number,
+  height: number
+): void {
+  const total = width * height;
+  if (total === 0) return;
+
+  const isExteriorBg = new Uint8Array(total);
+  const queue = new Int32Array(total);
+  let head = 0;
+  let tail = 0;
+
+  for (let x = 0; x < width; x++) {
+    if (alpha[x] < 128) {
+      isExteriorBg[x] = 1;
+      queue[tail++] = x;
+    }
+    const b = (height - 1) * width + x;
+    if (alpha[b] < 128 && !isExteriorBg[b]) {
+      isExteriorBg[b] = 1;
+      queue[tail++] = b;
+    }
+  }
+  for (let y = 0; y < height; y++) {
+    const l = y * width;
+    if (alpha[l] < 128 && !isExteriorBg[l]) {
+      isExteriorBg[l] = 1;
+      queue[tail++] = l;
+    }
+    const r = y * width + (width - 1);
+    if (alpha[r] < 128 && !isExteriorBg[r]) {
+      isExteriorBg[r] = 1;
+      queue[tail++] = r;
+    }
+  }
+
+  while (head < tail) {
+    const idx = queue[head++];
+    const x = idx % width;
+    const y = (idx / width) | 0;
+
+    if (x > 0) {
+      const n = idx - 1;
+      if (!isExteriorBg[n] && alpha[n] < 128) {
+        isExteriorBg[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+    if (x < width - 1) {
+      const n = idx + 1;
+      if (!isExteriorBg[n] && alpha[n] < 128) {
+        isExteriorBg[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+    if (y > 0) {
+      const n = idx - width;
+      if (!isExteriorBg[n] && alpha[n] < 128) {
+        isExteriorBg[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+    if (y < height - 1) {
+      const n = idx + width;
+      if (!isExteriorBg[n] && alpha[n] < 128) {
+        isExteriorBg[n] = 1;
+        queue[tail++] = n;
+      }
+    }
+  }
+
+  for (let i = 0; i < total; i++) {
+    if (!isExteriorBg[i] && alpha[i] < 200) {
+      alpha[i] = 255;
+    }
+  }
 }
 
 /**
- * Morphological Erosion (if radius < 0) or Dilation (if radius > 0) for integer radius 1 or 2.
+ * 4-Stage Configurable Continuous Alpha Matte Refinement:
+ * - Stage A: Foreground/background confidence window (`lowClamp`..`highClamp`) preserving continuous soft transitions.
+ * - Stage D: Connectivity & component cleanup removing isolated exterior background speckles while keeping detached hair near the silhouette.
+ * - Stage C: Smart Enclosed-Hole Handling:
+ *   Distinguishes internal segmentation defects (e.g. speckles on dark shirts, lips, neck, glasses frames)
+ *   from genuine gaps (e.g. between arm and torso, between fingers) using neighborhood RGB evidence,
+ *   raw model confidence, and pocket area.
+ */
+export function cleanRawNeuralAlphaMatte(
+  rawAlpha: Uint8Array | Uint8ClampedArray,
+  width: number,
+  height: number,
+  options?: {
+    lowClamp?: number;
+    highClamp?: number;
+    keepLargestComponent?: boolean;
+    fillInteriorHoles?: boolean;
+    holeFillMode?: HoleFillMode;
+    speckleCleanupStrength?: number;
+    sourceRgba?: Uint8ClampedArray | null;
+    bypassRefinement?: boolean;
+  }
+): Uint8Array {
+  const numPixels = width * height;
+  const out = new Uint8Array(numPixels);
+  if (numPixels === 0) return out;
+
+  if (options?.bypassRefinement) {
+    for (let i = 0; i < numPixels; i++) {
+      out[i] = rawAlpha[i];
+    }
+    return out;
+  }
+
+  const lowClamp = options?.lowClamp ?? 18;
+  const highClamp = options?.highClamp ?? 230;
+  const keepLargestComponent = options?.keepLargestComponent ?? true;
+  const holeFillMode: HoleFillMode =
+    options?.holeFillMode ??
+    (options?.fillInteriorHoles === false ? 'off' : 'smart');
+  const speckleStrength = options?.speckleCleanupStrength ?? 50;
+  const sourceRgba = options?.sourceRgba ?? null;
+  const span = Math.max(1, highClamp - lowClamp);
+
+  // Stage A: Continuous Confidence Window (preserves soft hair/edge gradients in [lowClamp, highClamp])
+  for (let i = 0; i < numPixels; i++) {
+    const a = rawAlpha[i];
+    if (a <= lowClamp) {
+      out[i] = 0;
+    } else if (a >= highClamp) {
+      out[i] = 255;
+    } else {
+      const t = (a - lowClamp) / span;
+      // Smooth Hermite interpolation preserves continuous alpha gradients without hard thresholding
+      const smooth = t * t * (3 - 2 * t);
+      out[i] = Math.round(smooth * 255);
+    }
+  }
+
+  // Stage D: Conservative Connectivity & Exterior Speckle Cleanup
+  if (keepLargestComponent && speckleStrength > 0 && width >= 6 && height >= 6) {
+    const visited = new Uint8Array(numPixels);
+    const compId = new Int32Array(numPixels);
+    const compSizes: number[] = [0];
+    const queue = new Int32Array(numPixels);
+    let currentId = 0;
+    let maxCompSize = 0;
+
+    for (let i = 0; i < numPixels; i++) {
+      if (out[i] >= 32 && visited[i] === 0) {
+        currentId++;
+        let head = 0;
+        let tail = 0;
+        visited[i] = 1;
+        compId[i] = currentId;
+        queue[tail++] = i;
+
+        while (head < tail) {
+          const curr = queue[head++];
+          const cx = curr % width;
+          const cy = (curr - cx) / width;
+
+          if (cx > 0) {
+            const n = curr - 1;
+            if (visited[n] === 0 && out[n] >= 32) {
+              visited[n] = 1;
+              compId[n] = currentId;
+              queue[tail++] = n;
+            }
+          }
+          if (cx + 1 < width) {
+            const n = curr + 1;
+            if (visited[n] === 0 && out[n] >= 32) {
+              visited[n] = 1;
+              compId[n] = currentId;
+              queue[tail++] = n;
+            }
+          }
+          if (cy > 0) {
+            const n = curr - width;
+            if (visited[n] === 0 && out[n] >= 32) {
+              visited[n] = 1;
+              compId[n] = currentId;
+              queue[tail++] = n;
+            }
+          }
+          if (cy + 1 < height) {
+            const n = curr + width;
+            if (visited[n] === 0 && out[n] >= 32) {
+              visited[n] = 1;
+              compId[n] = currentId;
+              queue[tail++] = n;
+            }
+          }
+        }
+
+        compSizes[currentId] = tail;
+        if (tail > maxCompSize) {
+          maxCompSize = tail;
+        }
+      }
+    }
+
+    if (maxCompSize > 0) {
+      // Scale minimum component size conservatively by speckleStrength (0..100)
+      const ratio = 0.0005 + (speckleStrength / 100) * 0.035;
+      const minKeepSize = Math.max(4, Math.floor(maxCompSize * ratio));
+      for (let i = 0; i < numPixels; i++) {
+        const cid = compId[i];
+        if (cid > 0 && compSizes[cid] < minKeepSize) {
+          out[i] = 0;
+        }
+      }
+    }
+  }
+
+  // Stage C: Enclosed-Hole Handling ('smart' vs 'aggressive' vs 'off')
+  if (holeFillMode === 'aggressive') {
+    fillInteriorHolesOnAlpha(out, width, height);
+  } else if (holeFillMode === 'smart' && width >= 6 && height >= 6) {
+    // 1. Seed BFS from the 4 outer borders to mark true exterior background (`out[i] < 180`)
+    const isExteriorBg = new Uint8Array(numPixels);
+    const queue = new Int32Array(numPixels);
+    let head = 0;
+    let tail = 0;
+
+    for (let x = 0; x < width; x++) {
+      if (out[x] < 180) {
+        isExteriorBg[x] = 1;
+        queue[tail++] = x;
+      }
+      const b = (height - 1) * width + x;
+      if (out[b] < 180 && !isExteriorBg[b]) {
+        isExteriorBg[b] = 1;
+        queue[tail++] = b;
+      }
+    }
+    for (let y = 0; y < height; y++) {
+      const l = y * width;
+      if (out[l] < 180 && !isExteriorBg[l]) {
+        isExteriorBg[l] = 1;
+        queue[tail++] = l;
+      }
+      const r = y * width + (width - 1);
+      if (out[r] < 180 && !isExteriorBg[r]) {
+        isExteriorBg[r] = 1;
+        queue[tail++] = r;
+      }
+    }
+
+    // Compute mean exterior background RGB (if sourceRgba is provided) to compare against enclosed pockets
+    let extR = 235;
+    let extG = 235;
+    let extB = 235;
+    let extCount = 0;
+
+    while (head < tail) {
+      const idx = queue[head++];
+      if (sourceRgba && out[idx] < 30) {
+        extR += sourceRgba[idx * 4];
+        extG += sourceRgba[idx * 4 + 1];
+        extB += sourceRgba[idx * 4 + 2];
+        extCount++;
+      }
+      const x = idx % width;
+      const y = (idx / width) | 0;
+      if (x > 0) {
+        const n = idx - 1;
+        if (!isExteriorBg[n] && out[n] < 180) {
+          isExteriorBg[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (x < width - 1) {
+        const n = idx + 1;
+        if (!isExteriorBg[n] && out[n] < 180) {
+          isExteriorBg[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (y > 0) {
+        const n = idx - width;
+        if (!isExteriorBg[n] && out[n] < 180) {
+          isExteriorBg[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+      if (y < height - 1) {
+        const n = idx + width;
+        if (!isExteriorBg[n] && out[n] < 180) {
+          isExteriorBg[n] = 1;
+          queue[tail++] = n;
+        }
+      }
+    }
+
+    if (extCount > 0) {
+      extR /= extCount;
+      extG /= extCount;
+      extB /= extCount;
+    }
+
+    // 2. Inspect each enclosed pocket (pixels with out[i] < 235 and !isExteriorBg[i])
+    const visitedHole = new Uint8Array(numPixels);
+    const holeQueue = new Int32Array(numPixels);
+
+    for (let i = 0; i < numPixels; i++) {
+      if (!isExteriorBg[i] && out[i] < 235 && !visitedHole[i]) {
+        let hHead = 0;
+        let hTail = 0;
+        visitedHole[i] = 1;
+        holeQueue[hTail++] = i;
+
+        let rawConfSum = 0;
+        let holeR = 0;
+        let holeG = 0;
+        let holeB = 0;
+        let ringR = 0;
+        let ringG = 0;
+        let ringB = 0;
+        let ringCount = 0;
+
+        while (hHead < hTail) {
+          const curr = holeQueue[hHead++];
+          rawConfSum += rawAlpha[curr];
+          if (sourceRgba) {
+            holeR += sourceRgba[curr * 4];
+            holeG += sourceRgba[curr * 4 + 1];
+            holeB += sourceRgba[curr * 4 + 2];
+          }
+
+          const cx = curr % width;
+          const cy = (curr - cx) / width;
+          const neighbors = [
+            cx > 0 ? curr - 1 : -1,
+            cx + 1 < width ? curr + 1 : -1,
+            cy > 0 ? curr - width : -1,
+            cy + 1 < height ? curr + width : -1,
+          ];
+          for (const n of neighbors) {
+            if (n < 0) continue;
+            if (!isExteriorBg[n] && out[n] < 235) {
+              if (!visitedHole[n]) {
+                visitedHole[n] = 1;
+                holeQueue[hTail++] = n;
+              }
+            } else if (out[n] >= 235 && sourceRgba) {
+              ringR += sourceRgba[n * 4];
+              ringG += sourceRgba[n * 4 + 1];
+              ringB += sourceRgba[n * 4 + 2];
+              ringCount++;
+            }
+          }
+        }
+
+        const holeArea = hTail;
+        const holeAreaRatio = holeArea / numPixels;
+        const meanRawConf = rawConfSum / Math.max(1, holeArea);
+
+        // Decide whether this enclosed pocket is an internal segmentation defect vs. a genuine gap (e.g. arm-torso gap)
+        let shouldFillDefect = false;
+
+        if (!sourceRgba && holeAreaRatio <= 0.015) {
+          // Without RGB data, fill small/medium pinholes inside the silhouette
+          shouldFillDefect = true;
+        } else if (holeAreaRatio <= 0.002) {
+          // Microscopic 1-3px pinholes inside the silhouette are always defects
+          shouldFillDefect = true;
+        } else if (meanRawConf >= 48) {
+          // Pocket where the neural model had non-trivial foreground confidence
+          shouldFillDefect = true;
+        } else if (sourceRgba && ringCount > 0) {
+          // Compare pocket color against surrounding shirt/skin vs. exterior wall background
+          const mHoleR = holeR / holeArea;
+          const mHoleG = holeG / holeArea;
+          const mHoleB = holeB / holeArea;
+          const mRingR = ringR / ringCount;
+          const mRingG = ringG / ringCount;
+          const mRingB = ringB / ringCount;
+
+          const distToFgRing = Math.hypot(
+            mHoleR - mRingR,
+            mHoleG - mRingG,
+            mHoleB - mRingB
+          );
+          const distToExtBg = Math.hypot(
+            mHoleR - extR,
+            mHoleG - extG,
+            mHoleB - extB
+          );
+          // If the pocket color is closer to the surrounding clothing/skin than the exterior wall, fill it
+          if (distToFgRing < distToExtBg * 0.85 || distToExtBg > 55) {
+            shouldFillDefect = true;
+          }
+        } else {
+          // When no RGB is provided (e.g. synthetic alpha-only mask), fill enclosed pockets up to 4% of image
+          if (holeAreaRatio <= 0.04) {
+            shouldFillDefect = true;
+          }
+        }
+
+        if (shouldFillDefect) {
+          for (let k = 0; k < hTail; k++) {
+            out[holeQueue[k]] = 255;
+          }
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+/**
+ * Morphological Erosion (if erode=true) or Dilation (if erode=false) for integer radius 1 or 2.
  */
 function morphStepInteger(
   alphaIn: Float32Array,
@@ -102,7 +859,7 @@ function morphStepInteger(
 }
 
 /**
- * Separable 2-pass tent/Gaussian-like smoothing of an alpha matte for fractional featherPx (0..3px).
+ * Separable 2-pass Gaussian smoothing of an alpha matte for fractional featherPx (0..3px).
  */
 function featherAlphaMatte(
   alphaIn: Float32Array,
@@ -129,7 +886,6 @@ function featherAlphaMatte(
   const temp = new Float32Array(width * height);
   const out = new Float32Array(width * height);
 
-  // Horizontal pass
   for (let y = 0; y < height; y++) {
     const rowOffset = y * width;
     for (let x = 0; x < width; x++) {
@@ -142,7 +898,6 @@ function featherAlphaMatte(
     }
   }
 
-  // Vertical pass
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       let acc = 0;
@@ -158,13 +913,12 @@ function featherAlphaMatte(
 }
 
 /**
- * Alpha Matte Edge Refinement + Halo Color Decontamination (Defringe):
- * - Takes RGBA pixel buffer and a foreground alpha mask (0..255 from neural matting).
- * - Applies Edge Choke / Defringe (`chokePx` in [-2, +2]) using fractional morphological
- *   erosion (< 0) or dilation (> 0).
- * - Applies Edge Feather (`featherPx` in [0, 3]) using separable Gaussian smoothing.
- * - Decontaminates boundary RGB pixels by pulling edge colors toward solid interior
- *   foreground pixels, removing bright room halos around hair and shoulders.
+ * Stage B: Boundary-Only Edge-Aware Alpha Matte Refinement + Halo Color Decontamination:
+ * - Computes a 3px transition band along the outer boundary of the silhouette.
+ * - Interior foreground pixels (outside the 3px boundary band) are preserved untouched.
+ * - Exterior background pixels (outside the 3px boundary band) are locked to 0.
+ * - Applies Edge Choke / Defringe (`chokePx` in [-2, +2]) and Edge Feather (`featherPx` in [0, 3])
+ *   ONLY to the silhouette boundary zone, preserving continuous hair and lens alpha when Choke=0, Feather=0.
  */
 export function refineAlphaMatteAndDefringe(
   rgbaData: Uint8ClampedArray,
@@ -180,7 +934,47 @@ export function refineAlphaMatteAndDefringe(
     baseFloat[i] = baseAlphaMask[i];
   }
 
-  // 1. Fractional Morphological Choke / Expand (-2.0px to +2.0px)
+  // Identify the 3px boundary zone around the silhouette edge
+  const boundaryZone = new Uint8Array(numPixels);
+  const bandRadius = 3;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = y * width + x;
+      const centerA = baseAlphaMask[i];
+      if (centerA > 8 && centerA < 248) {
+        boundaryZone[i] = 1;
+        continue;
+      }
+      const isSolid = centerA >= 248;
+      let foundOpposite = false;
+      for (let dy = -bandRadius; dy <= bandRadius && !foundOpposite; dy++) {
+        const ny = y + dy;
+        if (ny < 0 || ny >= height) {
+          if (isSolid) foundOpposite = true;
+          continue;
+        }
+        for (let dx = -bandRadius; dx <= bandRadius; dx++) {
+          const nx = x + dx;
+          if (nx < 0 || nx >= width) {
+            if (isSolid) {
+              foundOpposite = true;
+              break;
+            }
+            continue;
+          }
+          const na = baseAlphaMask[ny * width + nx];
+          if (isSolid ? na < 242 : na > 12) {
+            foundOpposite = true;
+            break;
+          }
+        }
+      }
+      if (foundOpposite) {
+        boundaryZone[i] = 1;
+      }
+    }
+  }
+
   const clampedChoke = Math.max(-2, Math.min(2, chokePx));
   let chokedAlpha: Float32Array;
 
@@ -193,7 +987,10 @@ export function refineAlphaMatteAndDefringe(
     const r1 = Math.ceil(absChoke);
     const frac = absChoke - r0;
 
-    const a0 = r0 === 0 ? baseFloat : morphStepInteger(baseFloat, width, height, r0, erode);
+    const a0 =
+      r0 === 0
+        ? baseFloat
+        : morphStepInteger(baseFloat, width, height, r0, erode);
     if (frac < 0.05 || r0 === r1) {
       chokedAlpha = a0;
     } else {
@@ -205,11 +1002,13 @@ export function refineAlphaMatteAndDefringe(
     }
   }
 
-  // 2. Separable Gaussian Edge Feather (0px to 3px)
-  const featheredAlpha = featherAlphaMatte(chokedAlpha, width, height, featherPx);
+  const featheredAlpha = featherAlphaMatte(
+    chokedAlpha,
+    width,
+    height,
+    featherPx
+  );
 
-  // 3. Foreground Halo Color Decontamination (Defringe) + Write Final Alpha
-  // Snapshot original RGB so neighborhood lookups read unmodified interior colors
   const origRgb = new Uint8Array(numPixels * 3);
   for (let i = 0; i < numPixels; i++) {
     const idx4 = i * 4;
@@ -219,23 +1018,28 @@ export function refineAlphaMatteAndDefringe(
     origRgb[idx3 + 2] = rgbaData[idx4 + 2];
   }
 
-  const extraDefringe = clampedChoke < 0 ? Math.min(0.45, Math.abs(clampedChoke) * 0.22) : 0;
+  const extraDefringe =
+    clampedChoke < 0 ? Math.min(0.45, Math.abs(clampedChoke) * 0.22) : 0;
 
   for (let y = 0; y < height; y++) {
     for (let x = 0; x < width; x++) {
       const i = y * width + x;
       const idx4 = i * 4;
+
+      if (boundaryZone[i] === 0) {
+        rgbaData[idx4 + 3] = baseAlphaMask[i];
+        continue;
+      }
+
       const a = Math.max(0, Math.min(255, Math.round(featheredAlpha[i])));
       rgbaData[idx4 + 3] = a;
 
-      // Decontaminate semi-transparent or choked boundary pixels
       if (a > 4 && a < 252) {
         let bestInteriorAlpha = 0;
         let fgR = origRgb[i * 3];
         let fgG = origRgb[i * 3 + 1];
         let fgB = origRgb[i * 3 + 2];
 
-        // Search 5x5 neighborhood for clean solid interior foreground (baseAlphaMask >= 242)
         for (let dy = -2; dy <= 2; dy++) {
           const ny = y + dy;
           if (ny < 0 || ny >= height) continue;
@@ -255,9 +1059,15 @@ export function refineAlphaMatteAndDefringe(
 
         if (bestInteriorAlpha >= 235) {
           const pull = Math.min(0.92, (1 - a / 255) * 0.78 + extraDefringe);
-          rgbaData[idx4] = Math.round(rgbaData[idx4] * (1 - pull) + fgR * pull);
-          rgbaData[idx4 + 1] = Math.round(rgbaData[idx4 + 1] * (1 - pull) + fgG * pull);
-          rgbaData[idx4 + 2] = Math.round(rgbaData[idx4 + 2] * (1 - pull) + fgB * pull);
+          rgbaData[idx4] = Math.round(
+            rgbaData[idx4] * (1 - pull) + fgR * pull
+          );
+          rgbaData[idx4 + 1] = Math.round(
+            rgbaData[idx4 + 1] * (1 - pull) + fgG * pull
+          );
+          rgbaData[idx4 + 2] = Math.round(
+            rgbaData[idx4 + 2] * (1 - pull) + fgB * pull
+          );
         }
       }
     }
@@ -266,10 +1076,6 @@ export function refineAlphaMatteAndDefringe(
 
 /**
  * Extracts signature ink using O(N) Bradley-Roth Local Adaptive Thresholding with a 2D Integral Image.
- * - Calibrated window size w = 24 (scaled with resolution so 300px width uses w = 24, half-window s = 12)
- * - Calibrated default threshold t = 0.14 (adjustable via thresholdParam)
- * - Supports "Preserve Original Blue/Black Ink Color" ('original') vs "Pure Monochrome Black" ('mono')
- * - Cleanly removes uneven phone camera shadows on paper without breaking thin pen strokes.
  */
 export function processSignatureAdaptiveInk(
   data: Uint8ClampedArray,
@@ -297,8 +1103,6 @@ export function processSignatureAdaptiveInk(
     }
   }
 
-  // 1. Build 2D Integral Images (Summed-Area Tables for Luminance and Valid Pixel Count) in O(N)
-  // Using validCount prevents transparent letterbox margins from skewing local paper luminance at photo edges.
   const stride = width + 1;
   const integral = new Float64Array((width + 1) * (height + 1));
   const integralCount = new Int32Array((width + 1) * (height + 1));
@@ -317,7 +1121,6 @@ export function processSignatureAdaptiveInk(
     }
   }
 
-  // 2. Calibrate Bradley-Roth window w = 24 (half-window s = w / 2 = 12)
   const scaleFactor = Math.max(1, Math.min(width, height) / 120);
   const effectiveW = Math.max(
     8,
@@ -325,9 +1128,6 @@ export function processSignatureAdaptiveInk(
   );
   const halfW = Math.max(4, Math.round(effectiveW / 2));
 
-  // Normalize thresholdParam:
-  // - If caller passes 6..28 (e.g. 14 for t = 0.14), t = thresholdParam / 100
-  // - If caller passes legacy 100..220 (e.g. 145), map 145 -> 0.14
   let t: number;
   if (thresholdParam <= 45) {
     t = Math.max(0.04, Math.min(0.32, thresholdParam / 100));
@@ -350,7 +1150,6 @@ export function processSignatureAdaptiveInk(
       const i = y * width + x;
       const idx = i * 4;
 
-      // Ignore transparent letterbox margins or 1px anti-aliased photo-frame edges
       const isNearLetterboxEdge =
         validMask[i] === 0 ||
         (x > 0 && validMask[i - 1] === 0) ||
@@ -388,13 +1187,10 @@ export function processSignatureAdaptiveInk(
       const localMean = sum / Math.max(1, validCount);
       const pixelLum = lum[i];
 
-      // Bradley-Roth adaptive threshold: pixel is ink if pixelLum < localMean * (1 - t)
       const adaptiveCutoff = localMean * (1 - t);
-      // Soft anti-aliased transition band so thin pen strokes never break or alias
       const softMargin = Math.max(6, localMean * 0.055);
 
       if (pixelLum >= adaptiveCutoff + softMargin * 0.35) {
-        // Paper / phone shadow region
         if (bgRemovalEnabled) {
           data[idx + 3] = 0;
         } else {
@@ -404,239 +1200,58 @@ export function processSignatureAdaptiveInk(
           data[idx + 3] = 255;
         }
       } else {
-        // Ink stroke region: compute continuous ink density (0..1)
         const rawDensity = Math.min(
           1,
-          Math.max(0.18, (adaptiveCutoff + softMargin * 0.35 - pixelLum) / (softMargin * 1.45))
+          Math.max(
+            0.18,
+            (adaptiveCutoff + softMargin * 0.35 - pixelLum) /
+              (softMargin * 1.45)
+          )
         );
-        // Boost stroke solidity so thin ballpoint pen lines stay crisp
         const inkAlpha = Math.min(1, Math.pow(rawDensity, 0.72) * 1.15);
 
         if (inkMode === 'mono') {
-          // Pure Monochrome Black Ink
           data[idx] = 10;
           data[idx + 1] = 12;
           data[idx + 2] = 16;
         } else {
-          // Preserve Original Blue/Black Ink Color while neutralizing paper shadow cast
           const r = data[idx];
           const g = data[idx + 1];
           const b = data[idx + 2];
           const normScale = 255 / Math.max(80, localMean);
-          // Enhance chroma differences (so blue ballpoint pen ink stays distinctively blue)
           const nr = Math.min(255, r * normScale);
           const ng = Math.min(255, g * normScale);
           const nb = Math.min(255, b * normScale);
           const avg = (nr + ng + nb) / 3;
           const chromaBoost = 1.65;
           const darken = 0.58;
-          data[idx] = Math.max(0, Math.min(220, Math.round((avg + (nr - avg) * chromaBoost) * darken)));
-          data[idx + 1] = Math.max(0, Math.min(220, Math.round((avg + (ng - avg) * chromaBoost) * darken)));
-          data[idx + 2] = Math.max(0, Math.min(245, Math.round((avg + (nb - avg) * chromaBoost) * darken)));
+          data[idx] = Math.max(
+            0,
+            Math.min(220, Math.round((avg + (nr - avg) * chromaBoost) * darken))
+          );
+          data[idx + 1] = Math.max(
+            0,
+            Math.min(220, Math.round((avg + (ng - avg) * chromaBoost) * darken))
+          );
+          data[idx + 2] = Math.max(
+            0,
+            Math.min(245, Math.round((avg + (nb - avg) * chromaBoost) * darken))
+          );
         }
 
         if (bgRemovalEnabled) {
           data[idx + 3] = Math.round(inkAlpha * 255);
         } else {
-          // Blend ink over pure white paper
           data[idx] = Math.round(data[idx] * inkAlpha + 255 * (1 - inkAlpha));
-          data[idx + 1] = Math.round(data[idx + 1] * inkAlpha + 255 * (1 - inkAlpha));
-          data[idx + 2] = Math.round(data[idx + 2] * inkAlpha + 255 * (1 - inkAlpha));
+          data[idx + 1] = Math.round(
+            data[idx + 1] * inkAlpha + 255 * (1 - inkAlpha)
+          );
+          data[idx + 2] = Math.round(
+            data[idx + 2] * inkAlpha + 255 * (1 - inkAlpha)
+          );
           data[idx + 3] = 255;
         }
       }
     }
   }
-}
-
-/**
- * Fallback CIE LAB + Sobel Edge-Aware Portrait Matting (used instantaneously before
- * neural mask finishes or if offline). Generates a clean alpha mask and applies
- * refineAlphaMatteAndDefringe.
- */
-export function processPortraitHighQualityCutout(
-  data: Uint8ClampedArray,
-  width: number,
-  height: number,
-  tolerance: number,
-  featherRadius = 2,
-  chokePx = 0
-): void {
-  const numPixels = width * height;
-  if (numPixels === 0) return;
-
-  const labPixels: LabColor[] = new Array(numPixels);
-  const lum = new Float32Array(numPixels);
-
-  for (let i = 0; i < numPixels; i++) {
-    const idx = i * 4;
-    const r = data[idx];
-    const g = data[idx + 1];
-    const b = data[idx + 2];
-    const lab = rgbToLab(r, g, b);
-    labPixels[i] = lab;
-    lum[i] = lab.l;
-  }
-
-  const edgeMag = new Float32Array(numPixels);
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const idx = y * width + x;
-      const gx =
-        -lum[(y - 1) * width + (x - 1)] +
-        lum[(y - 1) * width + (x + 1)] -
-        2 * lum[y * width + (x - 1)] +
-        2 * lum[y * width + (x + 1)] -
-        lum[(y + 1) * width + (x - 1)] +
-        lum[(y + 1) * width + (x + 1)];
-
-      const gy =
-        -lum[(y - 1) * width + (x - 1)] -
-        2 * lum[(y - 1) * width + x] -
-        lum[(y - 1) * width + (x + 1)] +
-        lum[(y + 1) * width + (x - 1)] +
-        2 * lum[(y + 1) * width + x] +
-        lum[(y + 1) * width + (x + 1)];
-
-      const dChromaX =
-        Math.abs(labPixels[y * width + (x + 1)].a - labPixels[y * width + (x - 1)].a) +
-        Math.abs(labPixels[y * width + (x + 1)].b - labPixels[y * width + (x - 1)].b);
-      const dChromaY =
-        Math.abs(labPixels[(y + 1) * width + x].a - labPixels[(y - 1) * width + x].a) +
-        Math.abs(labPixels[(y + 1) * width + x].b - labPixels[(y - 1) * width + x].b);
-
-      edgeMag[idx] = Math.sqrt(gx * gx + gy * gy) * 0.35 + (dChromaX + dChromaY) * 1.2;
-    }
-  }
-
-  const clusters: LabColor[] = [];
-  const clusterMergeDist = 8.5;
-
-  const addClusterSample = (x: number, y: number) => {
-    const cx = Math.max(0, Math.min(width - 1, Math.round(x)));
-    const cy = Math.max(0, Math.min(height - 1, Math.round(y)));
-    const sample = labPixels[cy * width + cx];
-    for (let k = 0; k < clusters.length; k++) {
-      if (labDistanceShadowAware(sample, clusters[k]) < clusterMergeDist) {
-        clusters[k] = {
-          l: (clusters[k].l + sample.l) * 0.5,
-          a: (clusters[k].a + sample.a) * 0.5,
-          b: (clusters[k].b + sample.b) * 0.5,
-          r: (clusters[k].r + sample.r) * 0.5,
-          g: (clusters[k].g + sample.g) * 0.5,
-          bl: (clusters[k].bl + sample.bl) * 0.5,
-        };
-        return;
-      }
-    }
-    if (clusters.length < 18) {
-      clusters.push({ ...sample });
-    }
-  };
-
-  const stepX = Math.max(2, Math.floor(width / 24));
-  const stepY = Math.max(2, Math.floor(height / 24));
-  for (let x = 2; x < width - 2; x += stepX) {
-    addClusterSample(x, 2);
-    addClusterSample(x, Math.min(height - 1, 5));
-  }
-  const maxSideY = Math.floor(height * 0.82);
-  for (let y = 2; y < maxSideY; y += stepY) {
-    addClusterSample(2, y);
-    addClusterSample(width - 3, y);
-  }
-
-  if (clusters.length === 0) {
-    clusters.push(labPixels[0]);
-  }
-
-  const minClusterDist = (c: LabColor): number => {
-    let best = 9999;
-    for (let k = 0; k < clusters.length; k++) {
-      const d = labDistanceShadowAware(c, clusters[k]);
-      if (d < best) best = d;
-    }
-    return best;
-  };
-
-  const baseThresh = Math.max(10, tolerance * 0.82);
-  const neighborStepThresh = Math.max(6.5, tolerance * 0.34);
-  const edgeBarrierCutoff = Math.max(18, 46 - tolerance * 0.35);
-
-  const bgMask = new Uint8Array(numPixels);
-  const queue = new Int32Array(numPixels);
-  let head = 0;
-  let tail = 0;
-
-  const trySeed = (x: number, y: number) => {
-    const idx = y * width + x;
-    if (bgMask[idx] !== 0) return;
-    const d = minClusterDist(labPixels[idx]);
-    if (d <= baseThresh * 1.25) {
-      bgMask[idx] = 1;
-      queue[tail++] = idx;
-    }
-  };
-
-  for (let x = 0; x < width; x++) {
-    trySeed(x, 0);
-    if (height > 1) trySeed(x, 1);
-  }
-  for (let y = 0; y < Math.floor(height * 0.92); y++) {
-    trySeed(0, y);
-    trySeed(width - 1, y);
-  }
-
-  const isProtectedSubjectCore = (x: number, y: number): boolean => {
-    const nx = (x / width - 0.5) * 2;
-    const ny = (y / height - 0.52) * 2;
-    const inFaceCore = nx * nx * 6.2 + (ny + 0.14) * (ny + 0.14) * 5.0 < 0.14;
-    const inChestCore =
-      y > height * 0.84 && Math.abs(nx) < 0.14 && y < height * 0.98;
-    return inFaceCore || inChestCore;
-  };
-
-  const neighborOffsets = [-1, 1, -width, width];
-
-  while (head < tail) {
-    const curr = queue[head++];
-    const cx = curr % width;
-    const cy = (curr - cx) / width;
-    const currLab = labPixels[curr];
-
-    for (let n = 0; n < 4; n++) {
-      const next = curr + neighborOffsets[n];
-      if (next < 0 || next >= numPixels) continue;
-      if (bgMask[next] !== 0) continue;
-
-      const nx = next % width;
-      const ny = (next - nx) / width;
-      if (Math.abs(nx - cx) + Math.abs(ny - cy) !== 1) continue;
-
-      const nextLab = labPixels[next];
-      const stepDist = labDistanceShadowAware(currLab, nextLab);
-      const clusterDist = minClusterDist(nextLab);
-
-      if (isProtectedSubjectCore(nx, ny) && clusterDist > baseThresh * 0.25) {
-        continue;
-      }
-
-      const hasStrongEdge = edgeMag[next] > edgeBarrierCutoff;
-      if (hasStrongEdge && clusterDist > baseThresh * 0.55) {
-        continue;
-      }
-
-      if (clusterDist <= baseThresh && stepDist <= neighborStepThresh) {
-        bgMask[next] = 1;
-        queue[tail++] = next;
-      }
-    }
-  }
-
-  const fgMask = new Uint8Array(numPixels);
-  for (let i = 0; i < numPixels; i++) {
-    fgMask[i] = bgMask[i] === 1 ? 0 : 255;
-  }
-
-  refineAlphaMatteAndDefringe(data, fgMask, width, height, chokePx, featherRadius);
 }

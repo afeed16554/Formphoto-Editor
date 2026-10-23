@@ -5,17 +5,37 @@ import {
   THEMES,
 } from './constants';
 import {
+  BENCHMARK_SCENARIOS,
+  BenchmarkRunComparison,
+  BenchmarkScenarioId,
+  generateBenchmarkScenario,
+  runScenarioBenchmarkComparison,
+} from './services/benchmarkSuite';
+import {
+  mapOutputPointToSourceNormalized,
   ProcessedExportResult,
   renderProcessedOutput,
 } from './services/imageProcessor';
 import {
+  beginAlphaBrushStroke,
+  canRedoAlphaBrush,
+  canUndoAlphaBrush,
   clearCachedNeuralMatte,
+  detectAndCachePreClippedImage,
+  getAlphaRefinementConfig,
   getCachedNeuralMatte,
+  getRuntimeDiagnostics,
   NeuralMattingProgress,
   NeuralModelTier,
+  paintCachedAlphaBrushStroke,
+  redoAlphaBrushStroke,
+  resetManualAlphaBrushEdits,
   runNeuralPortraitMatting,
   subscribeNeuralProgress,
+  undoAlphaBrushStroke,
+  updateAlphaRefinementConfig,
 } from './services/neuralBgRemover';
+import { downloadA4PrintableSheetPdf } from './services/pdfSheetExporter';
 import {
   AdmissionPreset,
   BgToneKey,
@@ -28,6 +48,7 @@ import {
   UnitType,
   ViewMode,
 } from './types';
+import { HoleFillMode } from './utils/bgRemoverCore';
 import {
   applyAspectRatioLock,
   computeAspectRatio,
@@ -65,14 +86,18 @@ const INITIAL_STATE: TransformState = {
   qualityPct: 90,
   resolutionTier: 'standard',
   stripExif: true,
-  viewMode: 'single', // Default to Output Only mode per user request
+  viewMode: 'single', // Default to Output Only mode
   zoomPct: 100,
   showGrid: true,
+  showMaskOverlay: false,
   splitPositionPct: 50,
   theme: 'oled', // Default to Pitch-Black OLED interface
 };
 
 const THEME_KEYS: ThemeKey[] = ['oled', 'warm', 'light', 'gray'];
+
+type TouchUpBrushMode = 'off' | 'erase' | 'restore';
+type BenchmarkBgKey = 'white' | 'black' | 'midgrey' | 'skyblue' | 'checker';
 
 function triggerDataUrlDownload(dataUrl: string, filename: string): void {
   if (!dataUrl) return;
@@ -88,7 +113,13 @@ class FormPhotoProStudio {
   private state: TransformState = { ...INITIAL_STATE };
   private rawImageEl: HTMLImageElement | null = null;
   private rawImageBlob: Blob | null = null;
-  private neuralModelTier: NeuralModelTier = 'isnet_quint8';
+  private neuralModelTier: NeuralModelTier = 'rmbg_14';
+  private brushMode: TouchUpBrushMode = 'off';
+  private brushSizePx = 22;
+  private selectedBenchmarkScenario: BenchmarkScenarioId = 'black_shirt_hoodie';
+  private benchmarkBgKey: BenchmarkBgKey = 'white';
+  private lastBenchmarkComparison: BenchmarkRunComparison | null = null;
+
   private customUploadedFile: {
     name: string;
     sizeKb: number;
@@ -109,6 +140,7 @@ class FormPhotoProStudio {
     this.mountInitialShell();
     subscribeNeuralProgress((prog) => {
       this.syncNeuralProgressUI(prog);
+      this.syncRuntimeDiagnosticsPanel();
     });
     this.runPipelineAndSyncUI();
   }
@@ -149,10 +181,10 @@ class FormPhotoProStudio {
         el.classList.add('opacity-0', 'pointer-events-none', 'translate-y-4');
         el.classList.remove('opacity-100', 'translate-y-0');
       }
-    }, 3000);
+    }, 3400);
   }
 
-  private triggerNeuralMattingIfNeeded(): void {
+  private triggerNeuralMattingIfNeeded(forceAiEvenIfPreClipped = false): void {
     if (
       !this.rawImageEl ||
       this.state.mode !== 'photo' ||
@@ -160,13 +192,16 @@ class FormPhotoProStudio {
     ) {
       return;
     }
-    const existing = getCachedNeuralMatte(
-      this.rawImageEl,
-      this.neuralModelTier
-    );
-    if (existing) {
-      this.runPipelineAndSyncUI();
-      return;
+
+    if (!forceAiEvenIfPreClipped) {
+      const existing = getCachedNeuralMatte(
+        this.rawImageEl,
+        this.neuralModelTier
+      );
+      if (existing) {
+        this.runPipelineAndSyncUI();
+        return;
+      }
     }
 
     void runNeuralPortraitMatting(
@@ -175,7 +210,8 @@ class FormPhotoProStudio {
       this.neuralModelTier,
       () => {
         this.runPipelineAndSyncUI();
-      }
+      },
+      forceAiEvenIfPreClipped
     );
   }
 
@@ -184,6 +220,9 @@ class FormPhotoProStudio {
     const detailEl = document.getElementById('neural-stage-detail');
     const barEl = document.getElementById('neural-progress-bar');
     const badgeEl = document.getElementById('neural-idb-badge');
+    const preclippedBanner = document.getElementById(
+      'preclipped-detected-banner'
+    );
     const canvasOverlay = document.getElementById('canvas-neural-loading-pill');
     const canvasOverlayText = document.getElementById(
       'canvas-neural-loading-text'
@@ -193,7 +232,9 @@ class FormPhotoProStudio {
     if (detailEl) detailEl.textContent = prog.detailText;
     if (barEl) {
       const pct =
-        prog.status === 'idle' || prog.status === 'ready'
+        prog.status === 'idle' ||
+        prog.status === 'ready' ||
+        prog.status === 'preclipped'
           ? 100
           : Math.max(5, Math.min(100, prog.progressPct));
       barEl.style.width = `${pct}%`;
@@ -202,11 +243,23 @@ class FormPhotoProStudio {
       badgeEl.textContent =
         prog.status === 'downloading' || prog.status === 'inferring'
           ? `${prog.progressPct}%`
-          : prog.status === 'ready'
-            ? '60FPS BITMAP'
-            : prog.status === 'error'
-              ? 'RETRY'
-              : 'READY';
+          : prog.status === 'preclipped'
+            ? 'PRE-CLIPPED PNG'
+            : prog.status === 'ready'
+              ? 'VALIDATED MATTE'
+              : prog.status === 'error'
+                ? 'ERROR — RETRY'
+                : 'READY';
+      badgeEl.className = `text-[9px] font-mono px-1.5 py-0.5 rounded font-bold shrink-0 ${
+        prog.status === 'error'
+          ? 'bg-rose-500/20 text-rose-400'
+          : 'bg-emerald-500/15 text-emerald-400'
+      }`;
+    }
+    if (preclippedBanner) {
+      const showPreclipped = Boolean(prog.isPreClippedAlpha && this.rawImageEl);
+      preclippedBanner.classList.toggle('hidden', !showPreclipped);
+      preclippedBanner.classList.toggle('flex', showPreclipped);
     }
     if (canvasOverlay && canvasOverlayText) {
       const isBusy =
@@ -219,6 +272,67 @@ class FormPhotoProStudio {
       if (isBusy) {
         canvasOverlayText.textContent = `${prog.stageLabel}`;
       }
+    }
+  }
+
+  private syncRuntimeDiagnosticsPanel(): void {
+    const rt = getRuntimeDiagnostics();
+    const cached = getCachedNeuralMatte(this.rawImageEl, this.neuralModelTier);
+    const setText = (id: string, text: string) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+
+    setText('diag-model-id', `${rt.activeModelId}`);
+    setText('diag-model-version', rt.modelVersion);
+    setText('diag-backend', rt.inferenceBackend);
+    setText('diag-status', rt.status.toUpperCase());
+    setText(
+      'diag-duration',
+      rt.inferenceDurationMs > 0 ? `${rt.inferenceDurationMs} ms` : '—'
+    );
+    setText(
+      'diag-source-dims',
+      rt.sourceWidth > 0 ? `${rt.sourceWidth}×${rt.sourceHeight}` : '—'
+    );
+
+    const errBox = document.getElementById('diag-error-box');
+    const errText = document.getElementById('diag-error-text');
+    if (errBox && errText) {
+      if (rt.errorMessage) {
+        errBox.classList.remove('hidden');
+        errText.textContent = rt.errorMessage;
+      } else {
+        errBox.classList.add('hidden');
+        errText.textContent = '';
+      }
+    }
+
+    const d = cached?.diagnostics.refinedDiagnostics ?? rt.refinedDiagnostics;
+    if (d) {
+      setText('diag-speckles', String(d.backgroundSpeckleCount));
+      setText('diag-holes', String(d.foregroundHoleCount));
+      setText('diag-smoothness', `${d.boundarySmoothnessPct}%`);
+    } else {
+      setText('diag-speckles', '—');
+      setText('diag-holes', '—');
+      setText('diag-smoothness', '—');
+    }
+
+    // Sync Undo / Redo button disabled states
+    const btnUndo = document.getElementById(
+      'btn-brush-undo'
+    ) as HTMLButtonElement | null;
+    const btnRedo = document.getElementById(
+      'btn-brush-redo'
+    ) as HTMLButtonElement | null;
+    if (btnUndo) {
+      btnUndo.disabled = !canUndoAlphaBrush();
+      btnUndo.classList.toggle('opacity-40', !canUndoAlphaBrush());
+    }
+    if (btnRedo) {
+      btnRedo.disabled = !canRedoAlphaBrush();
+      btnRedo.classList.toggle('opacity-40', !canRedoAlphaBrush());
     }
   }
 
@@ -236,9 +350,12 @@ class FormPhotoProStudio {
   }
 
   private runPipelineAndSyncUI(): void {
+    const cached = getCachedNeuralMatte(this.rawImageEl, this.neuralModelTier);
     const neuralMatte =
-      this.state.mode === 'photo' && this.state.bgRemovalEnabled
-        ? getCachedNeuralMatte(this.rawImageEl, this.neuralModelTier)
+      this.state.mode === 'photo' &&
+      cached &&
+      (this.state.bgRemovalEnabled || cached.isPreClippedAlpha)
+        ? cached
         : null;
     const result = renderProcessedOutput(
       this.state,
@@ -247,11 +364,12 @@ class FormPhotoProStudio {
     );
     this.lastResult = result;
     this.syncDynamicDOM(result);
+    this.syncRuntimeDiagnosticsPanel();
   }
 
-  private handleLocalFileUpload(file: File): void {
+  private handleLocalFileUpload(file: File, sourceLabel = 'Loaded'): void {
     if (!file.type.startsWith('image/')) {
-      this.showToast('Please select a valid image file (JPG, PNG, WebP, SVG).');
+      this.showToast('Please select or paste a valid image (JPG, PNG, WebP).');
       return;
     }
     if (this.customUploadedFile?.url) {
@@ -264,23 +382,79 @@ class FormPhotoProStudio {
     const img = new Image();
     img.onload = () => {
       this.customUploadedFile = {
-        name: file.name,
+        name: file.name || 'Cutout.png',
         sizeKb: Math.max(0.5, Math.round((file.size / 1024) * 10) / 10),
         width: img.naturalWidth || 600,
         height: img.naturalHeight || 700,
         url: objectUrl,
       };
       this.rawImageEl = img;
+
+      // Immediately inspect whether this image is a pre-clipped transparent PNG (e.g. Samsung Gallery cutout)
+      if (this.state.mode === 'photo') {
+        const preClipped = detectAndCachePreClippedImage(
+          img,
+          this.neuralModelTier
+        );
+        if (preClipped) {
+          this.runPipelineAndSyncUI();
+          this.showToast(
+            'Pre-Clipped Transparent PNG Detected — Backdrop Studio Ready!'
+          );
+          return;
+        }
+      }
+
       this.runPipelineAndSyncUI();
       this.triggerNeuralMattingIfNeeded();
       this.showToast(
-        `Loaded "${file.name}" (${this.customUploadedFile.width}×${this.customUploadedFile.height} px) locally.`
+        `${sourceLabel} "${this.customUploadedFile.name}" (${this.customUploadedFile.width}×${this.customUploadedFile.height} px).`
       );
     };
     img.onerror = () => {
       this.showToast('Could not decode that image file in browser.');
     };
     img.src = objectUrl;
+  }
+
+  private async loadBenchmarkScenarioIntoEditor(
+    scenarioId: BenchmarkScenarioId
+  ): Promise<void> {
+    const gen = await generateBenchmarkScenario(scenarioId);
+    const res = await fetch(gen.sourceDataUrl);
+    const blob = await res.blob();
+    const file = new File([blob], `${scenarioId}.png`, { type: 'image/png' });
+    this.handleLocalFileUpload(file, 'Benchmark');
+  }
+
+  private async handleClipboardPasteButton(): Promise<void> {
+    try {
+      if (
+        !navigator.clipboard ||
+        typeof navigator.clipboard.read !== 'function'
+      ) {
+        this.showToast('Press Ctrl+V (or Cmd+V) anywhere to paste your cutout.');
+        return;
+      }
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        const imageType = item.types.find((t) => t.startsWith('image/'));
+        if (imageType) {
+          const blob = await item.getType(imageType);
+          const ext = imageType.split('/')[1] || 'png';
+          const file = new File([blob], `Pasted_Cutout.${ext}`, {
+            type: imageType,
+          });
+          this.handleLocalFileUpload(file, 'Pasted');
+          return;
+        }
+      }
+      this.showToast(
+        'No image found in clipboard. Copy a photo or Samsung Gallery cutout first.'
+      );
+    } catch {
+      this.showToast('Press Ctrl+V (or long-press Paste) to paste your cutout.');
+    }
   }
 
   private clearUploadedImage(): void {
@@ -291,6 +465,7 @@ class FormPhotoProStudio {
     this.customUploadedFile = null;
     this.rawImageEl = null;
     this.rawImageBlob = null;
+    this.brushMode = 'off';
     this.runPipelineAndSyncUI();
     this.showToast('Cleared image from browser memory.');
   }
@@ -319,12 +494,16 @@ class FormPhotoProStudio {
   private handleExportCurrentFile(): void {
     if (!this.rawImageEl) {
       document.getElementById('local-file-input')?.click();
-      this.showToast('Select a photo or signature from your device first.');
+      this.showToast('Select or paste a photo/signature first.');
       return;
     }
-    if (!this.lastResult || !this.lastResult.hasSourceImage) {
-      this.runPipelineAndSyncUI();
-    }
+
+    // Ensure Mask Overlay is temporarily disabled for clean export if user left it toggled on
+    const prevOverlay = this.state.showMaskOverlay;
+    this.state.showMaskOverlay = false;
+    this.runPipelineAndSyncUI();
+    this.state.showMaskOverlay = prevOverlay;
+
     if (!this.lastResult || !this.lastResult.dataUrl) return;
 
     const preset = this.getActivePreset();
@@ -360,9 +539,97 @@ class FormPhotoProStudio {
       this.exportHistory.pop();
     }
     this.renderExportHistoryStrip();
+    if (prevOverlay) {
+      this.runPipelineAndSyncUI();
+    }
     this.showToast(
       `Exported ${filename} (${this.lastResult.sizeKb} KB) locally.`
     );
+  }
+
+  private async handleExportA4PdfSheet(): Promise<void> {
+    if (!this.rawImageEl) {
+      document.getElementById('local-file-input')?.click();
+      this.showToast('Upload or load a portrait photo first to generate A4 PDF sheet.');
+      return;
+    }
+    const prevOverlay = this.state.showMaskOverlay;
+    this.state.showMaskOverlay = false;
+    this.runPipelineAndSyncUI();
+    this.state.showMaskOverlay = prevOverlay;
+
+    if (!this.lastResult || !this.lastResult.dataUrl) return;
+    const preset = this.getActivePreset();
+    try {
+      this.showToast('Generating calibrated A4 PDF contact sheet…');
+      await downloadA4PrintableSheetPdf(
+        this.lastResult.dataUrl,
+        preset,
+        this.state,
+        this.lastResult.outWidth,
+        this.lastResult.outHeight,
+        this.lastResult.sizeKb
+      );
+      if (prevOverlay) {
+        this.runPipelineAndSyncUI();
+      }
+      this.showToast('Downloaded calibrated A4 (210×297mm) PDF sheet!');
+    } catch (err) {
+      console.error('A4 PDF generation failed:', err);
+      this.showToast('Could not generate A4 PDF sheet.');
+    }
+  }
+
+  private applyTouchUpBrushAtPointer(clientX: number, clientY: number): void {
+    if (
+      this.brushMode === 'off' ||
+      !this.rawImageEl ||
+      !this.lastResult ||
+      this.state.mode !== 'photo'
+    ) {
+      return;
+    }
+    const frameWrap = document.getElementById('calibrated-frame-wrap');
+    if (!frameWrap) return;
+    const rect = frameWrap.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const normOutX = (clientX - rect.left) / rect.width;
+    const normOutY = (clientY - rect.top) / rect.height;
+
+    const cached = getCachedNeuralMatte(this.rawImageEl, this.neuralModelTier);
+    if (!cached) return;
+
+    const mapped = mapOutputPointToSourceNormalized(
+      normOutX,
+      normOutY,
+      cached.width,
+      cached.height,
+      this.lastResult.outWidth,
+      this.lastResult.outHeight,
+      this.state
+    );
+    if (!mapped) return;
+
+    const scaleRatio =
+      Math.max(cached.width, cached.height) /
+      Math.max(1, Math.max(rect.width, rect.height));
+    const radiusSourcePx = Math.max(
+      2,
+      (this.brushSizePx / 2) *
+        scaleRatio *
+        (100 / Math.max(25, this.state.scalePct))
+    );
+
+    const changed = paintCachedAlphaBrushStroke(
+      mapped.normX,
+      mapped.normY,
+      radiusSourcePx,
+      this.brushMode
+    );
+    if (changed) {
+      this.schedulePipelineUpdate();
+    }
   }
 
   private mountInitialShell(): void {
@@ -370,6 +637,7 @@ class FormPhotoProStudio {
     if (!root) return;
 
     const presetsList = this.getAllPresetsList();
+    const refCfg = getAlphaRefinementConfig();
 
     root.innerHTML = `
       <!-- Hidden Native File Input (100% On-Device Browser Processing) -->
@@ -378,8 +646,8 @@ class FormPhotoProStudio {
       <!-- COMPACT FULL-SCREEN TOP HEADER RIBBON -->
       <header class="w-full h-12 px-3 sm:px-5 border-b border-[var(--m3-outline-variant)] m3-surface-1 flex items-center justify-between gap-2 shrink-0 z-40">
         
-        <!-- Left: Minimal Studio Icon & Title + On-Device Privacy Pill -->
-        <div class="flex items-center gap-2.5">
+        <!-- Left: Minimal Studio Icon & Title + On-Device Privacy Pill + Benchmark Suite Trigger -->
+        <div class="flex items-center gap-2">
           <div class="w-7 h-7 rounded-lg m3-primary flex items-center justify-center shrink-0">
             <span class="material-symbols-outlined text-[17px]">crop_free</span>
           </div>
@@ -388,9 +656,14 @@ class FormPhotoProStudio {
             <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
             <span class="hidden sm:inline">On-Device Native</span>
           </button>
+          <button id="btn-open-benchmark-suite" type="button" class="inline-flex items-center gap-1 text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full m3-surface-2 hover:m3-surface-3 border border-[var(--m3-outline-variant)] text-sky-300 transition" title="Open Neural Matting Accuracy & 8-Scenario Benchmark Test Suite">
+            <span class="material-symbols-outlined text-[13px]">science</span>
+            <span class="hidden lg:inline">Accuracy Benchmark</span>
+            <span class="lg:hidden">Benchmark</span>
+          </button>
         </div>
 
-        <!-- Center: Mode Switcher (Photo | Signature) + Upload Action -->
+        <!-- Center: Mode Switcher (Photo | Signature) + Upload + Paste Cutout (Ctrl+V) -->
         <div class="flex items-center gap-1 bg-[var(--m3-surface-2)] p-0.5 rounded-full border border-[var(--m3-outline-variant)]">
           <button id="mode-btn-photo" type="button" class="m3-spring flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold">
             <span class="material-symbols-outlined text-[14px]">portrait</span>
@@ -400,9 +673,14 @@ class FormPhotoProStudio {
             <span class="material-symbols-outlined text-[14px]">draw</span>
             <span>Signature</span>
           </button>
-          <button id="btn-top-upload" type="button" class="m3-spring flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold m3-secondary-container hover:opacity-90">
+          <button id="btn-top-upload" type="button" class="m3-spring flex items-center gap-1 px-3 py-1 rounded-full text-[11px] font-bold m3-secondary-container hover:opacity-90" title="Upload Photo or Pre-Clipped Transparent PNG">
             <span class="material-symbols-outlined text-[14px]">upload_file</span>
             <span>Upload</span>
+          </button>
+          <button id="btn-top-paste" type="button" class="m3-spring flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25" title="Paste a Samsung Gallery / iOS subject cutout from clipboard (Ctrl+V)">
+            <span class="material-symbols-outlined text-[14px]">content_paste_go</span>
+            <span class="hidden md:inline">Paste Cutout (Ctrl+V)</span>
+            <span class="md:hidden">Paste</span>
           </button>
         </div>
 
@@ -429,7 +707,7 @@ class FormPhotoProStudio {
       <main class="flex-1 w-full md:h-[calc(100vh-3rem)] md:overflow-hidden relative flex flex-col md:flex-row items-stretch">
         
         <!-- LEFT DOCKED CONTROL RAIL (Compact & Streamlined on Tablet/Desktop) -->
-        <aside class="w-full md:w-[315px] lg:w-[335px] shrink-0 border-b md:border-b-0 md:border-r border-[var(--m3-outline-variant)] m3-surface-1 p-3 sm:p-3.5 md:overflow-y-auto flex flex-col gap-3 z-20 order-2 md:order-1">
+        <aside class="w-full md:w-[335px] lg:w-[360px] shrink-0 border-b md:border-b-0 md:border-r border-[var(--m3-outline-variant)] m3-surface-1 p-3 sm:p-3.5 md:overflow-y-auto flex flex-col gap-3 z-20 order-2 md:order-1">
           
           <!-- 1. MINIMIZED ADMISSION PORTAL TRIGGER PILL (Opens Pop-up Modal) -->
           <div class="m3-surface rounded-2xl p-2.5 border border-[var(--m3-outline-variant)] flex items-center justify-between gap-2">
@@ -507,7 +785,7 @@ class FormPhotoProStudio {
             </div>
           </div>
 
-          <!-- 3. ON-DEVICE NEURAL BACKGROUND STUDIO & EDGE REFINEMENT -->
+          <!-- 3. ON-DEVICE NEURAL BACKGROUND STUDIO & PRE-CLIPPED PNG ENGINE -->
           <div class="m3-surface rounded-2xl p-3 border border-[var(--m3-outline-variant)] flex flex-col gap-2.5">
             <div class="flex items-center justify-between">
               <span class="font-display font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
@@ -519,13 +797,23 @@ class FormPhotoProStudio {
               </button>
             </div>
 
-            <!-- Studio Fill Swatches (#ffffff White, #38bdf8 Sky Blue, etc.) -->
+            <!-- Pre-Clipped Transparent PNG Detected Badge -->
+            <div id="preclipped-detected-banner" class="hidden items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-500/15 border border-emerald-500/35 text-emerald-300 text-[10px] font-mono font-bold">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span class="material-symbols-outlined text-[14px] text-emerald-400 shrink-0">check_circle</span>
+                <span class="truncate">Pre-Clipped Transparent PNG Detected — Backdrop Studio Ready</span>
+              </div>
+            </div>
+
+            <!-- Studio Fill Swatches (#ffffff White, #38bdf8 Sky Blue, #e2e8f0 Off-White, #808080 Mid-Grey, #000000 Black, Checkerboard, Custom) -->
             <div class="flex items-center justify-between">
               <span class="text-[11px] m3-text-muted font-medium">Backdrop Fill</span>
-              <div class="flex items-center gap-1.5 bg-[var(--m3-surface-1)] p-1 rounded-full border border-[var(--m3-outline-variant)]">
+              <div class="flex items-center gap-1 bg-[var(--m3-surface-1)] p-1 rounded-full border border-[var(--m3-outline-variant)]">
                 <button type="button" data-bgtone="white" class="bg-swatch w-5 h-5 rounded-full bg-white border border-stone-400 transition hover:scale-110" title="Pure White (#ffffff)"></button>
                 <button type="button" data-bgtone="blue" class="bg-swatch w-5 h-5 rounded-full bg-[#38bdf8] border border-white transition hover:scale-110" title="Passport Sky Blue (#38bdf8)"></button>
                 <button type="button" data-bgtone="grey" class="bg-swatch w-5 h-5 rounded-full bg-slate-200 border border-white transition hover:scale-110" title="Neutral Off-White (#e2e8f0)"></button>
+                <button type="button" data-bgtone="midgrey" class="bg-swatch w-5 h-5 rounded-full bg-[#808080] border border-stone-300 transition hover:scale-110" title="Neutral Mid-Grey (#808080 — Halo Inspection)"></button>
+                <button type="button" data-bgtone="black" class="bg-swatch w-5 h-5 rounded-full bg-black border border-stone-500 transition hover:scale-110" title="Pitch Black (#000000 — Fringe Inspection)"></button>
                 <button type="button" data-bgtone="alpha" class="bg-swatch w-5 h-5 rounded-full checker-bg border border-stone-400 transition hover:scale-110" title="Transparent Alpha (PNG/WebP)"></button>
                 <label class="w-5 h-5 rounded-full overflow-hidden border border-stone-400 cursor-pointer flex items-center justify-center bg-gradient-to-tr from-amber-400 via-rose-400 to-indigo-500" title="Custom Backdrop Color">
                   <input id="input-custom-bg-color" type="color" value="#dbeafe" class="opacity-0 w-0 h-0" />
@@ -533,36 +821,45 @@ class FormPhotoProStudio {
               </div>
             </div>
 
-            <!-- Portrait Neural AI Progress Bar & Alpha Matte Edge Refinement Sliders -->
+            <!-- Portrait Neural AI Progress Bar, Model Selector, 4-Stage Refinement, Runtime Diagnostics & Touch-Up Brush -->
             <div id="portrait-matting-controls" class="flex flex-col gap-2.5 pt-1.5 border-t border-[var(--m3-outline-variant)]">
               
-              <!-- Two-Tier Commercial-Grade Neural Engine Selector -->
-              <div class="grid grid-cols-2 gap-1 bg-[var(--m3-surface-1)] p-1 rounded-xl border border-[var(--m3-outline-variant)]">
-                <button id="btn-neural-tier-quint8" type="button" class="m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition m3-primary shadow-sm" title="Default Engine: @imgly/background-removal@1.7.0 (isnet_quint8)">
-                  ISNet Quint8 (Default)
-                </button>
-                <button id="btn-neural-tier-fp16" type="button" class="m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition m3-text-muted hover:text-m3-text" title="Studio Pro Tier: @imgly/background-removal@1.7.0 (isnet_fp16)">
-                  ISNet FP16 (Studio Pro)
-                </button>
+              <!-- Selectable Neural Models: RMBG-1.4 | MODNet Portrait | IMG.LY Medium -->
+              <div>
+                <div class="flex items-center justify-between mb-1">
+                  <span class="text-[10px] font-semibold m3-text-muted">Verified Neural Model</span>
+                  <span class="text-[9px] font-mono text-emerald-400">Aspect-Preserved</span>
+                </div>
+                <div class="grid grid-cols-3 gap-1 bg-[var(--m3-surface-1)] p-1 rounded-xl border border-[var(--m3-outline-variant)]">
+                  <button id="btn-neural-tier-rmbg" type="button" class="m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition m3-primary shadow-sm" title="briaai/RMBG-1.4 via @huggingface/transformers@3.1.2 (1024×1024 Foreground Segmentation)">
+                    RMBG-1.4
+                  </button>
+                  <button id="btn-neural-tier-modnet" type="button" class="m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition m3-text-muted hover:text-m3-text" title="Xenova/modnet via @huggingface/transformers@3.1.2 (512×512 Portrait Matting)">
+                    MODNet
+                  </button>
+                  <button id="btn-neural-tier-imgly" type="button" class="m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition m3-text-muted hover:text-m3-text" title="@imgly/background-removal@1.7.0 (Medium ONNX Model)">
+                    IMG.LY 1.7
+                  </button>
+                </div>
               </div>
 
               <!-- Real-Time Neural Model Download / Processing Progress Box -->
-              <div id="neural-progress-container" class="m3-surface-1 rounded-xl p-2 border border-[var(--m3-outline-variant)] cursor-pointer" title="Click to re-run neural segmentation">
+              <div id="neural-progress-container" class="m3-surface-1 rounded-xl p-2 border border-[var(--m3-outline-variant)] cursor-pointer" title="Click to run / re-run neural segmentation">
                 <div class="flex items-center justify-between gap-1 mb-1">
-                  <span id="neural-stage-label" class="text-[10px] font-mono font-bold text-m3-primary truncate">ISNet Neural Matting Ready</span>
+                  <span id="neural-stage-label" class="text-[10px] font-mono font-bold text-m3-primary truncate">Neural Portrait AI Ready</span>
                   <span id="neural-idb-badge" class="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold shrink-0">READY</span>
                 </div>
                 <div class="w-full h-1.5 rounded-full bg-[var(--m3-surface-2)] overflow-hidden">
                   <div id="neural-progress-bar" class="h-full m3-primary transition-all duration-200" style="width: 100%;"></div>
                 </div>
-                <span id="neural-stage-detail" class="text-[9px] font-mono m3-text-muted mt-1 block truncate">@imgly/background-removal@1.7.0 • 100% On-Device</span>
+                <span id="neural-stage-detail" class="text-[9px] font-mono m3-text-muted mt-1 block truncate">RMBG-1.4 / MODNet • 100% On-Device</span>
               </div>
 
-              <!-- Alpha Matte Edge Refinement Sliders: Edge Choke / Defringe (-2px to +2px) & Edge Feather (0px to 3px) -->
+              <!-- Stage B: Boundary-Only Alpha Matte Edge Refinement Sliders: Edge Choke (-2px to +2px) & Edge Feather (0px to 3px) -->
               <div class="grid grid-cols-2 gap-2.5">
                 <div>
                   <div class="flex justify-between items-center mb-1">
-                    <label for="slider-bg-choke" class="text-[10px] font-semibold m3-text-muted" title="Shrink (-2px) or expand (+2px) alpha edge & remove room halo">Edge Choke / Defringe</label>
+                    <label for="slider-bg-choke" class="text-[10px] font-semibold m3-text-muted" title="Shrink (-2px) or expand (+2px) 3px outer boundary & remove room halo">Edge Choke / Defringe</label>
                     <span id="val-bg-choke" class="font-mono text-[10px] font-bold">0 px</span>
                   </div>
                   <input id="slider-bg-choke" type="range" min="-2" max="2" step="0.5" value="0" class="m3-slider" />
@@ -573,7 +870,7 @@ class FormPhotoProStudio {
                 </div>
                 <div>
                   <div class="flex justify-between items-center mb-1">
-                    <label for="slider-bg-feather" class="text-[10px] font-semibold m3-text-muted" title="Soften alpha boundary before compositing (0px to 3px)">Edge Feather</label>
+                    <label for="slider-bg-feather" class="text-[10px] font-semibold m3-text-muted" title="Soften 3px outer silhouette boundary (0px to 3px)">Edge Feather</label>
                     <span id="val-bg-feather" class="font-mono text-[10px] font-bold">0 px</span>
                   </div>
                   <input id="slider-bg-feather" type="range" min="0" max="3" step="0.5" value="0" class="m3-slider" />
@@ -581,6 +878,112 @@ class FormPhotoProStudio {
                     <span>0px Sharp</span>
                     <span>3px Soft</span>
                   </div>
+                </div>
+              </div>
+
+              <!-- Stage A, C, D: Configurable & Reversible Alpha Refinement Pipeline -->
+              <div class="m3-surface-1 rounded-xl p-2 border border-[var(--m3-outline-variant)] flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-mono uppercase tracking-wider font-bold text-m3-primary">Alpha Matte Refinement</span>
+                  <label class="flex items-center gap-1 text-[9px] font-mono cursor-pointer select-none" title="Bypass post-processing to inspect the raw continuous neural alpha mask">
+                    <input id="chk-bypass-refinement" type="checkbox" ${refCfg.bypassRefinement ? 'checked' : ''} class="accent-[var(--m3-primary)] rounded" />
+                    <span>Raw Unrefined Mask</span>
+                  </label>
+                </div>
+
+                <!-- Stage C: Enclosed Hole Handling Mode (Smart / Aggressive / Off) -->
+                <div>
+                  <div class="flex items-center justify-between mb-1">
+                    <span class="text-[9px] m3-text-muted font-semibold" title="Smart mode fills dark-shirt/lip interior holes while preserving genuine arm-torso & finger background openings">Enclosed Hole Fill</span>
+                    <span id="val-hole-mode-hint" class="text-[9px] font-mono text-emerald-400">Preserves Arm Gaps</span>
+                  </div>
+                  <div id="hole-fill-mode-group" class="grid grid-cols-3 gap-1 bg-[var(--m3-surface-2)] p-0.5 rounded-lg border border-[var(--m3-outline-variant)]">
+                    <button type="button" data-holemode="smart" class="hole-mode-btn py-0.5 px-1 rounded text-[9px] font-bold transition m3-primary">Smart</button>
+                    <button type="button" data-holemode="aggressive" class="hole-mode-btn py-0.5 px-1 rounded text-[9px] font-bold transition m3-text-muted">Solid All</button>
+                    <button type="button" data-holemode="off" class="hole-mode-btn py-0.5 px-1 rounded text-[9px] font-bold transition m3-text-muted">Off</button>
+                  </div>
+                </div>
+
+                <!-- Stage A & D: Low/High Confidence Cut & Speckle Cleanup Sliders -->
+                <div class="grid grid-cols-3 gap-1.5">
+                  <div>
+                    <div class="flex justify-between text-[9px] font-mono mb-0.5">
+                      <span class="m3-text-muted">BG Floor</span>
+                      <span id="val-conf-low" class="font-bold">${refCfg.lowConfidenceCut}</span>
+                    </div>
+                    <input id="slider-conf-low" type="range" min="4" max="50" step="2" value="${refCfg.lowConfidenceCut}" class="m3-slider" title="Alpha values below this floor snap to 0 (transparent)" />
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[9px] font-mono mb-0.5">
+                      <span class="m3-text-muted">FG Lock</span>
+                      <span id="val-conf-high" class="font-bold">${refCfg.highConfidenceCut}</span>
+                    </div>
+                    <input id="slider-conf-high" type="range" min="185" max="250" step="5" value="${refCfg.highConfidenceCut}" class="m3-slider" title="Alpha values above this ceiling lock to 255 (solid)" />
+                  </div>
+                  <div>
+                    <div class="flex justify-between text-[9px] font-mono mb-0.5">
+                      <span class="m3-text-muted">De-Speckle</span>
+                      <span id="val-speckle-cleanup" class="font-bold">${refCfg.speckleCleanupStrength}%</span>
+                    </div>
+                    <input id="slider-speckle-cleanup" type="range" min="0" max="100" step="10" value="${refCfg.speckleCleanupStrength}" class="m3-slider" title="Connected-component background island removal strength" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- Manual Touch-Up Brush (Pan / Erase BG / Restore) + Undo / Redo / Mask Overlay + Brush Size (5px to 60px) -->
+              <div class="pt-1.5 border-t border-[var(--m3-outline-variant)] flex flex-col gap-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-[10px] font-semibold m3-text-muted flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[13px] text-m3-primary">brush</span>
+                    <span>Touch-Up Brush</span>
+                  </span>
+                  <div class="flex items-center gap-1">
+                    <button id="btn-brush-undo" type="button" class="px-1.5 py-0.5 rounded bg-[var(--m3-surface-2)] text-[9px] font-mono font-bold hover:m3-surface-3 disabled:opacity-40" title="Undo Brush Stroke (Ctrl+Z)">↶ Undo</button>
+                    <button id="btn-brush-redo" type="button" class="px-1.5 py-0.5 rounded bg-[var(--m3-surface-2)] text-[9px] font-mono font-bold hover:m3-surface-3 disabled:opacity-40" title="Redo Brush Stroke (Ctrl+Y)">↷ Redo</button>
+                    <button id="btn-brush-reset" type="button" class="px-1.5 py-0.5 rounded bg-[var(--m3-surface-2)] text-[9px] font-mono font-bold hover:text-amber-300" title="Reset All Manual Brush Edits">Reset</button>
+                  </div>
+                </div>
+                <div class="grid grid-cols-3 gap-1 bg-[var(--m3-surface-1)] p-1 rounded-xl border border-[var(--m3-outline-variant)]">
+                  <button id="btn-brush-off" type="button" class="m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition m3-primary shadow-sm">
+                    Pan Canvas
+                  </button>
+                  <button id="btn-brush-erase" type="button" class="m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition m3-text-muted hover:text-m3-text">
+                    Erase BG
+                  </button>
+                  <button id="btn-brush-restore" type="button" class="m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition m3-text-muted hover:text-m3-text">
+                    Restore FG
+                  </button>
+                </div>
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex-1 flex items-center gap-1.5">
+                    <input id="slider-brush-size" type="range" min="5" max="60" step="1" value="22" class="m3-slider flex-1" />
+                    <span id="val-brush-size" class="font-mono text-[10px] font-bold w-9 text-right">22px</span>
+                  </div>
+                  <label class="flex items-center gap-1 text-[9px] font-mono px-1.5 py-0.5 rounded bg-[var(--m3-surface-2)] border border-[var(--m3-outline-variant)] cursor-pointer select-none" title="Show ruby/emerald alpha mask overlay on canvas">
+                    <input id="chk-mask-overlay" type="checkbox" class="accent-[var(--m3-primary)] rounded" />
+                    <span>Mask Overlay</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Explicit Runtime & Matte Quality Diagnostics Readout -->
+              <div class="m3-surface-1 rounded-xl p-2 border border-[var(--m3-outline-variant)] text-[9px] font-mono space-y-1">
+                <div class="flex items-center justify-between border-b border-[var(--m3-outline-variant)] pb-1">
+                  <span class="font-bold uppercase tracking-wider text-sky-400">Runtime &amp; Matte Diagnostics</span>
+                  <span id="diag-status" class="px-1.5 py-0.2 rounded bg-emerald-500/15 text-emerald-400 font-bold">IDLE</span>
+                </div>
+                <div class="grid grid-cols-2 gap-x-2 gap-y-0.5">
+                  <div class="truncate"><span class="m3-text-muted">Model:</span> <span id="diag-model-id" class="font-bold text-m3-text">briaai/RMBG-1.4</span></div>
+                  <div class="truncate"><span class="m3-text-muted">Backend:</span> <span id="diag-backend" class="font-bold text-emerald-400">probing…</span></div>
+                  <div class="truncate"><span class="m3-text-muted">Engine:</span> <span id="diag-model-version">transformers@3.1.2</span></div>
+                  <div class="truncate"><span class="m3-text-muted">Latency:</span> <span id="diag-duration" class="font-bold">—</span></div>
+                  <div class="truncate"><span class="m3-text-muted">BG Speckles:</span> <span id="diag-speckles" class="font-bold text-emerald-400">—</span></div>
+                  <div class="truncate"><span class="m3-text-muted">FG Holes:</span> <span id="diag-holes" class="font-bold text-emerald-400">—</span></div>
+                  <div class="truncate"><span class="m3-text-muted">Edge Smooth:</span> <span id="diag-smoothness" class="font-bold">—</span></div>
+                  <div class="truncate"><span class="m3-text-muted">Source:</span> <span id="diag-source-dims">—</span></div>
+                </div>
+                <div id="diag-error-box" class="hidden mt-1 p-1.5 rounded bg-rose-500/15 border border-rose-500/35 text-rose-300 text-[9px] leading-snug break-words">
+                  <span id="diag-error-text"></span>
                 </div>
               </div>
             </div>
@@ -703,7 +1106,7 @@ class FormPhotoProStudio {
                 <button id="btn-view-split" type="button" data-view="split" class="view-mode-btn px-2.5 py-1 rounded-full font-semibold transition">Split Wipe</button>
               </div>
 
-              <!-- MINIMIZED SPEC TELEMETRY & PORTAL VALIDATION PILL (Click to open details popup) -->
+              <!-- MINIMIZED SPEC TELEMETRY & PORTAL VALIDATION PILL -->
               <button id="btn-telemetry-pill" type="button" class="m3-spring flex items-center gap-1.5 px-2.5 py-1 rounded-full m3-surface-1 border border-[var(--m3-outline-variant)] shadow-sm text-[11px] font-mono hover:border-[var(--m3-primary)] shrink-0" title="Click to inspect full Spec Telemetry & Portal Validation Checks">
                 <span id="pill-telemetry-dims" class="font-bold text-m3-text">300×350 px</span>
                 <span class="opacity-40">•</span>
@@ -716,7 +1119,7 @@ class FormPhotoProStudio {
               </button>
             </div>
 
-            <!-- TOP-RIGHT CORNER EXPORT DOCK (Never overlaps the canvas in Side-by-Side or Output Only mode) -->
+            <!-- TOP-RIGHT CORNER EXPORT DOCK (Image Download + Direct A4 PDF Sheet Download) -->
             <div class="flex items-center gap-1.5 m3-surface-1 p-1 rounded-2xl border border-[var(--m3-outline-variant)] shadow-lg ml-auto shrink-0">
               <!-- Format Pills (JPG | JPEG | PNG | WEBP) -->
               <div id="format-selector-group" class="flex items-center gap-0.5 bg-[var(--m3-surface-2)] p-0.5 rounded-xl border border-[var(--m3-outline-variant)]">
@@ -745,6 +1148,12 @@ class FormPhotoProStudio {
                 <button type="button" data-tier="high" class="tier-btn m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center">High 2×</button>
               </div>
 
+              <!-- Direct A4 Printable PDF Sheet Button -->
+              <button id="btn-export-pdf-sheet" type="button" class="m3-spring py-1.5 px-2.5 rounded-xl m3-surface-2 hover:m3-surface-3 border border-[var(--m3-outline-variant)] font-display font-bold text-xs flex items-center gap-1 whitespace-nowrap" title="Download calibrated A4 (210×297mm) PDF print sheet with 8 crop-marked copies & portal telemetry">
+                <span class="material-symbols-outlined text-[15px] text-sky-400">picture_as_pdf</span>
+                <span class="hidden sm:inline">A4 PDF</span>
+              </button>
+
               <!-- Primary Export Button at Top-Right Corner -->
               <button id="btn-export-primary" type="button" class="m3-spring py-1.5 px-3 rounded-xl m3-primary font-display font-bold text-xs shadow-md flex items-center justify-center gap-1.5 hover:opacity-95 whitespace-nowrap">
                 <span class="material-symbols-outlined text-[15px]">download</span>
@@ -756,20 +1165,28 @@ class FormPhotoProStudio {
           <!-- CENTER CANVAS STAGE (Dead-Center in Viewport, 100% Unobstructed) -->
           <div class="flex-1 w-full flex items-center justify-center my-2 relative">
             
-            <!-- EMPTY STATE NATIVE UPLOAD DROPZONE (Shown when no photo is loaded yet — Zero Demo Photo) -->
+            <!-- EMPTY STATE NATIVE UPLOAD DROPZONE -->
             <div id="empty-upload-stage" class="w-full max-w-md m3-surface-1 rounded-[28px] p-6 sm:p-8 border-2 border-dashed border-[var(--m3-outline-variant)] hover:border-[var(--m3-primary)] transition flex flex-col items-center text-center cursor-pointer shadow-xl">
               <div class="w-14 h-14 rounded-2xl m3-primary-container flex items-center justify-center mb-3 shadow-inner">
                 <span class="material-symbols-outlined text-[30px]">add_photo_alternate</span>
               </div>
-              <h2 class="font-display font-bold text-base sm:text-lg text-m3-text">Drop or Select Image from Device</h2>
+              <h2 class="font-display font-bold text-base sm:text-lg text-m3-text">Drop, Upload, or Paste Cutout (Ctrl+V)</h2>
               <p class="text-xs m3-text-muted mt-1 max-w-xs leading-relaxed">
-                100% native browser processing. Neural portrait matting &amp; Bradley-Roth adaptive signature isolation run strictly on your device.
+                Supports raw photos (briaai/RMBG-1.4 &amp; Xenova/modnet aspect-preserved neural matting) and pre-clipped transparent PNGs with instant backdrop fill &amp; A4 PDF sheet export.
               </p>
               <div class="mt-4 flex flex-wrap items-center justify-center gap-2">
-                <span class="px-4 py-2 rounded-full m3-primary font-display font-bold text-xs shadow flex items-center gap-1.5">
+                <span id="btn-empty-choose" class="px-4 py-2 rounded-full m3-primary font-display font-bold text-xs shadow flex items-center gap-1.5">
                   <span class="material-symbols-outlined text-[16px]">folder_open</span>
                   <span>Choose Local Image</span>
                 </span>
+                <button id="btn-empty-paste" type="button" class="px-3.5 py-2 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-display font-bold text-xs flex items-center gap-1.5 hover:bg-emerald-500/25">
+                  <span class="material-symbols-outlined text-[16px]">content_paste_go</span>
+                  <span>Paste Cutout (Ctrl+V)</span>
+                </button>
+                <button id="btn-empty-benchmark" type="button" class="px-3.5 py-2 rounded-full m3-surface-2 hover:m3-surface-3 border border-[var(--m3-outline-variant)] text-sky-300 font-display font-bold text-xs flex items-center gap-1.5">
+                  <span class="material-symbols-outlined text-[16px]">science</span>
+                  <span>Test Benchmark Photo</span>
+                </button>
               </div>
               <div class="mt-4 pt-3 border-t border-[var(--m3-outline-variant)] w-full flex items-center justify-center gap-3 text-[10px] font-mono m3-text-muted">
                 <span id="empty-target-spec-hint">Target: BUET 300 × 350 px • ≤ 75 KB • JPG</span>
@@ -822,6 +1239,9 @@ class FormPhotoProStudio {
                       <div class="h-full border-l border-dashed border-sky-300/60 absolute left-[50%]"></div>
                     </div>
 
+                    <!-- Live Brush Ring Indicator -->
+                    <div id="brush-cursor-ring" class="hidden absolute rounded-full border-2 border-amber-300 bg-amber-300/15 pointer-events-none z-20" style="width: 22px; height: 22px; transform: translate(-50%, -50%);"></div>
+
                     <!-- Live Neural Segmentation Progress Overlay Pill -->
                     <div id="canvas-neural-loading-pill" class="hidden absolute bottom-2 left-2 right-2 px-2.5 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-sky-400/40 items-center justify-center gap-2 pointer-events-none">
                       <span class="w-2 h-2 rounded-full bg-sky-400 animate-ping shrink-0"></span>
@@ -852,7 +1272,7 @@ class FormPhotoProStudio {
           <!-- Bottom Helper Hint & Recent Local Exports Strip -->
           <div class="w-full flex flex-wrap items-center justify-between gap-2 z-10">
             <span id="stage-footer-hint" class="text-[11px] font-mono m3-text-muted px-3 py-1 rounded-full m3-surface-1 border border-[var(--m3-outline-variant)]">
-              Drag directly on canvas to pan • 100% On-Device Native Processing
+              Drag on canvas to pan • Use Touch-Up Brush (Undo/Redo) for fine hair/glasses • 100% On-Device
             </span>
             <div id="export-history-container" class="hidden items-center gap-1.5">
               <div id="export-history-list" class="flex items-center gap-1.5"></div>
@@ -878,10 +1298,8 @@ class FormPhotoProStudio {
           </div>
 
           <div class="overflow-y-auto flex-1 pr-1 mt-3 space-y-4">
-            <!-- Quick Portal Cards Grid inside Pop-up -->
             <div id="preset-chips-container" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5"></div>
 
-            <!-- Compact Ruleset Reference Table inside Pop-up -->
             <div class="border-t border-[var(--m3-outline-variant)] pt-3">
               <table class="w-full text-left border-collapse text-xs">
                 <thead>
@@ -974,10 +1392,126 @@ class FormPhotoProStudio {
             </button>
           </div>
           <p class="text-xs m3-text-muted my-3 leading-relaxed">
-            All image decoding, neural portrait matting (@imgly/background-removal with IndexedDB weight caching), Edge Choke/Defringe &amp; Feather refinement, and O(N) Bradley-Roth Integral-Image signature isolation run strictly inside your browser memory. Zero files are ever uploaded to any server.
+            All image decoding, aspect-preserved neural portrait matting (<code class="text-sky-300">briaai/RMBG-1.4</code> at 1024×1024 and <code class="text-sky-300">Xenova/modnet</code> at 512×512 via <code class="text-emerald-300">@huggingface/transformers@3.1.2</code>), 4-stage reversible alpha refinement, O(N) Bradley-Roth Integral-Image signature isolation, and A4 PDF contact sheet generation run strictly inside your browser memory. Zero files are ever uploaded to any server.
           </p>
           <div class="flex justify-end">
             <button data-close-modal="privacy" type="button" class="px-4 py-1.5 rounded-full m3-primary text-xs font-bold">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- POP-UP MODAL 4: Neural Matting Accuracy & 8-Scenario Benchmark Test Suite -->
+      <div id="modal-benchmark" class="hidden fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-3 sm:p-5">
+        <div class="m3-surface-1 max-w-5xl w-full rounded-[28px] p-5 border border-[var(--m3-outline-variant)] shadow-2xl max-h-[90vh] flex flex-col">
+          <div class="flex items-center justify-between pb-3 border-b border-[var(--m3-outline-variant)] gap-2">
+            <div class="flex items-center gap-2.5">
+              <span class="material-symbols-outlined text-sky-400 text-[22px]">science</span>
+              <div>
+                <h3 class="font-display font-bold text-base">Neural Matting Accuracy &amp; Benchmark Test Suite</h3>
+                <p class="text-[11px] m3-text-muted">Evaluate <code class="text-sky-300">briaai/RMBG-1.4</code> (1024×1024) vs <code class="text-sky-300">Xenova/modnet</code> (512×512) vs <code class="text-amber-300">Unrefined Raw Mask</code> across 8 challenging portrait scenarios.</p>
+              </div>
+            </div>
+            <button data-close-modal="benchmark" type="button" class="w-8 h-8 rounded-full m3-surface-2 flex items-center justify-center hover:m3-surface-3 shrink-0">
+              <span class="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </div>
+
+          <div class="overflow-y-auto flex-1 pr-1 mt-3 space-y-4">
+            <!-- 8 Representative Scenarios Selector Grid -->
+            <div>
+              <div class="flex items-center justify-between mb-2">
+                <span class="text-[10px] font-mono uppercase tracking-wider m3-text-muted font-bold">Select Representative Portrait Scenario (8 Cases)</span>
+                <div class="flex items-center gap-2">
+                  <button id="btn-bench-load-into-studio" type="button" class="px-3 py-1 rounded-full m3-surface-2 hover:m3-surface-3 border border-[var(--m3-outline-variant)] text-[11px] font-bold flex items-center gap-1">
+                    <span class="material-symbols-outlined text-[14px] text-emerald-400">input</span>
+                    <span>Load Selected Scenario into Studio</span>
+                  </button>
+                  <button id="btn-bench-run-comparison" type="button" class="px-3.5 py-1 rounded-full m3-primary text-[11px] font-bold flex items-center gap-1 shadow">
+                    <span class="material-symbols-outlined text-[14px]">play_arrow</span>
+                    <span>Run Side-by-Side Model Evaluation</span>
+                  </button>
+                </div>
+              </div>
+
+              <div id="benchmark-scenarios-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                ${BENCHMARK_SCENARIOS.map(
+                  (s) => `
+                  <button type="button" data-scenario-id="${s.id}" class="bench-scenario-btn text-left p-2.5 rounded-xl border transition flex flex-col justify-between ${
+                    s.id === this.selectedBenchmarkScenario
+                      ? 'm3-primary-container border-[var(--m3-primary)]'
+                      : 'm3-surface-2 hover:m3-surface-3 border-[var(--m3-outline-variant)]'
+                  }">
+                    <div>
+                      <span class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-black/25 font-bold inline-block mb-1">${s.challengeTag}</span>
+                      <div class="font-bold text-xs leading-snug">${s.title}</div>
+                    </div>
+                    <div class="text-[10px] opacity-75 mt-1 leading-tight">${s.subtitle}</div>
+                  </button>
+                `
+                ).join('')}
+              </div>
+            </div>
+
+            <!-- Background Preview Switcher for Side-by-Side Results -->
+            <div class="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-2xl m3-surface-2 border border-[var(--m3-outline-variant)]">
+              <div class="flex items-center gap-2">
+                <span class="text-[11px] font-mono font-bold">Inspection Backdrop:</span>
+                <div id="bench-bg-switcher" class="flex items-center gap-1">
+                  <button type="button" data-benchbg="white" class="bench-bg-btn px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold m3-primary">White #FFF</button>
+                  <button type="button" data-benchbg="black" class="bench-bg-btn px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold m3-surface-1">Black #000</button>
+                  <button type="button" data-benchbg="midgrey" class="bench-bg-btn px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold m3-surface-1">Mid-Grey #808080</button>
+                  <button type="button" data-benchbg="skyblue" class="bench-bg-btn px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold m3-surface-1">Sky Blue</button>
+                  <button type="button" data-benchbg="checker" class="bench-bg-btn px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold m3-surface-1">Checkerboard</button>
+                </div>
+              </div>
+              <span id="bench-status-label" class="text-[11px] font-mono text-sky-300 font-semibold">Select a scenario and click "Load into Studio" or "Run Side-by-Side Model Evaluation".</span>
+            </div>
+
+            <!-- Side-by-Side Comparison Cards (Source | briaai/RMBG-1.4 | Xenova/modnet | Unrefined Raw Mask) -->
+            <div id="bench-results-container" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div class="m3-surface-2 rounded-2xl p-3 border border-[var(--m3-outline-variant)] flex flex-col items-center text-center">
+                <span class="text-[10px] font-mono uppercase font-bold m3-text-muted mb-2">1. Source Photograph</span>
+                <div class="w-40 h-48 rounded-xl overflow-hidden border border-[var(--m3-outline-variant)] bg-black flex items-center justify-center">
+                  <img id="bench-img-source" alt="Benchmark Source" referrerpolicy="no-referrer" class="w-full h-full object-contain" />
+                </div>
+                <span id="bench-meta-source" class="text-[10px] font-mono m3-text-muted mt-2">320×380 px • Aspect-Preserved</span>
+              </div>
+
+              <div class="m3-surface-2 rounded-2xl p-3 border border-[var(--m3-outline-variant)] flex flex-col items-center text-center">
+                <span class="text-[10px] font-mono uppercase font-bold text-emerald-400 mb-2">2. briaai/RMBG-1.4 (Refined)</span>
+                <div class="w-40 h-48 rounded-xl overflow-hidden border border-[var(--m3-outline-variant)] checker-bg flex items-center justify-center">
+                  <img id="bench-img-rmbg" alt="RMBG-1.4 Result" referrerpolicy="no-referrer" class="w-full h-full object-contain" />
+                </div>
+                <span id="bench-meta-rmbg" class="text-[10px] font-mono m3-text-muted mt-2">1024×1024 • Smart Hole Fill</span>
+              </div>
+
+              <div class="m3-surface-2 rounded-2xl p-3 border border-[var(--m3-outline-variant)] flex flex-col items-center text-center">
+                <span class="text-[10px] font-mono uppercase font-bold text-sky-400 mb-2">3. Xenova/modnet (Refined)</span>
+                <div class="w-40 h-48 rounded-xl overflow-hidden border border-[var(--m3-outline-variant)] checker-bg flex items-center justify-center">
+                  <img id="bench-img-modnet" alt="MODNet Result" referrerpolicy="no-referrer" class="w-full h-full object-contain" />
+                </div>
+                <span id="bench-meta-modnet" class="text-[10px] font-mono m3-text-muted mt-2">512×512 • Portrait Trimap-Free</span>
+              </div>
+
+              <div class="m3-surface-2 rounded-2xl p-3 border border-[var(--m3-outline-variant)] flex flex-col items-center text-center">
+                <span class="text-[10px] font-mono uppercase font-bold text-amber-300 mb-2">4. Unrefined Raw Model Mask</span>
+                <div class="w-40 h-48 rounded-xl overflow-hidden border border-[var(--m3-outline-variant)] bg-black flex items-center justify-center">
+                  <img id="bench-img-rawmask" alt="Unrefined Raw Alpha Mask" referrerpolicy="no-referrer" class="w-full h-full object-contain" />
+                </div>
+                <span id="bench-meta-rawmask" class="text-[10px] font-mono m3-text-muted mt-2">Raw Continuous Alpha [0..255]</span>
+              </div>
+            </div>
+
+            <!-- Recommendation & Architectural Summary Box -->
+            <div class="p-3 rounded-2xl m3-surface-2 border border-[var(--m3-outline-variant)] text-xs space-y-1">
+              <div class="font-bold text-emerald-400 flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[16px]">Recommend</span>
+                <span id="bench-recommendation-title">Default Engine: briaai/RMBG-1.4 (1024×1024 Aspect-Preserved) + Smart Enclosed-Hole Refinement</span>
+              </div>
+              <p id="bench-recommendation-body" class="text-[11px] m3-text-muted leading-relaxed">
+                briaai/RMBG-1.4 is selected as the default engine because its 1024×1024 input resolution preserves thin eyeglass frames, collar edges, and hair wisps with higher Boundary F1 than 512×512 models, while Stage C Smart Hole Fill eliminates dark-shirt/lip interior holes without closing genuine arm-torso background openings.
+              </p>
+            </div>
           </div>
         </div>
       </div>
@@ -991,6 +1525,73 @@ class FormPhotoProStudio {
 
     this.renderPresetChips();
     this.bindEvents();
+    void this.previewSelectedBenchmarkScenario();
+  }
+
+  private async previewSelectedBenchmarkScenario(): Promise<void> {
+    try {
+      const gen = await generateBenchmarkScenario(
+        this.selectedBenchmarkScenario
+      );
+      const srcImg = document.getElementById(
+        'bench-img-source'
+      ) as HTMLImageElement | null;
+      if (srcImg) {
+        srcImg.src = gen.sourceDataUrl;
+      }
+      const metaSrc = document.getElementById('bench-meta-source');
+      if (metaSrc) {
+        metaSrc.textContent = `${gen.scenario.width}×${gen.scenario.height} px • ${gen.scenario.challengeTag}`;
+      }
+    } catch (err) {
+      console.warn('Could not preview benchmark scenario:', err);
+    }
+  }
+
+  private updateBenchmarkCompositeDisplays(): void {
+    const comp = this.lastBenchmarkComparison;
+    if (!comp) return;
+
+    const rmbgImg = document.getElementById(
+      'bench-img-rmbg'
+    ) as HTMLImageElement | null;
+    const modnetImg = document.getElementById(
+      'bench-img-modnet'
+    ) as HTMLImageElement | null;
+    const rawMaskImg = document.getElementById(
+      'bench-img-rawmask'
+    ) as HTMLImageElement | null;
+
+    if (comp.rmbg14 && rmbgImg) {
+      rmbgImg.src = comp.rmbg14.composites[this.benchmarkBgKey];
+      const meta = document.getElementById('bench-meta-rmbg');
+      if (meta) {
+        const d = comp.rmbg14.diagnostics;
+        meta.textContent = `IoU: ${d.iouPct ?? '—'}% • F1: ${d.boundaryF1Pct ?? '—'}% • Holes: ${d.foregroundHoleCount} • ${comp.rmbg14.inferenceMs}ms`;
+      }
+    }
+    if (comp.modnet && modnetImg) {
+      modnetImg.src = comp.modnet.composites[this.benchmarkBgKey];
+      const meta = document.getElementById('bench-meta-modnet');
+      if (meta) {
+        const d = comp.modnet.diagnostics;
+        meta.textContent = `IoU: ${d.iouPct ?? '—'}% • F1: ${d.boundaryF1Pct ?? '—'}% • Holes: ${d.foregroundHoleCount} • ${comp.modnet.inferenceMs}ms`;
+      }
+    }
+    const primaryEval = comp.rmbg14 || comp.modnet;
+    if (primaryEval && rawMaskImg) {
+      rawMaskImg.src = primaryEval.unrefinedMaskDataUrl;
+      const meta = document.getElementById('bench-meta-rawmask');
+      if (meta) {
+        const ud = primaryEval.unrefinedDiagnostics;
+        meta.textContent = `Raw IoU: ${ud.iouPct ?? '—'}% • Speckles: ${ud.backgroundSpeckleCount} • Holes: ${ud.foregroundHoleCount}`;
+      }
+    }
+
+    const recBody = document.getElementById('bench-recommendation-body');
+    if (recBody) {
+      recBody.textContent = comp.recommendationReason;
+    }
   }
 
   private renderPresetChips(): void {
@@ -1080,13 +1681,84 @@ class FormPhotoProStudio {
       ?.addEventListener('click', triggerFileDialog);
     document
       .getElementById('empty-upload-stage')
-      ?.addEventListener('click', triggerFileDialog);
+      ?.addEventListener('click', (e) => {
+        const target = e.target as HTMLElement;
+        if (
+          target.closest('#btn-empty-paste') ||
+          target.closest('#btn-empty-benchmark')
+        ) {
+          return;
+        }
+        triggerFileDialog();
+      });
     document
       .getElementById('btn-stage-replace')
       ?.addEventListener('click', triggerFileDialog);
     document
       .getElementById('raw-dropzone')
       ?.addEventListener('click', triggerFileDialog);
+
+    // Paste Cutout (Ctrl+V) buttons & global paste listener
+    document.getElementById('btn-top-paste')?.addEventListener('click', () => {
+      void this.handleClipboardPasteButton();
+    });
+    document
+      .getElementById('btn-empty-paste')
+      ?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void this.handleClipboardPasteButton();
+      });
+
+    // Quick test benchmark photo button on empty stage
+    document
+      .getElementById('btn-empty-benchmark')
+      ?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        void this.loadBenchmarkScenarioIntoEditor(
+          this.selectedBenchmarkScenario
+        );
+      });
+
+    window.addEventListener('paste', (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            this.handleLocalFileUpload(file, 'Pasted');
+            return;
+          }
+        }
+      }
+    });
+
+    // Global keyboard shortcuts for Brush Undo (Ctrl+Z) & Redo (Ctrl+Y / Ctrl+Shift+Z)
+    window.addEventListener('keydown', (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        if (e.shiftKey) {
+          if (redoAlphaBrushStroke()) {
+            e.preventDefault();
+            this.schedulePipelineUpdate(true);
+            this.showToast('Redid brush stroke.');
+          }
+        } else {
+          if (undoAlphaBrushStroke()) {
+            e.preventDefault();
+            this.schedulePipelineUpdate(true);
+            this.showToast('Undid brush stroke.');
+          }
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'y') {
+        if (redoAlphaBrushStroke()) {
+          e.preventDefault();
+          this.schedulePipelineUpdate(true);
+          this.showToast('Redid brush stroke.');
+        }
+      }
+    });
 
     document
       .getElementById('btn-stage-clear')
@@ -1148,7 +1820,7 @@ class FormPhotoProStudio {
         });
       });
 
-    // Minimized Pop-up Triggers
+    // Pop-up Modal Triggers
     document
       .getElementById('btn-open-portal-popup')
       ?.addEventListener('click', () => {
@@ -1168,6 +1840,13 @@ class FormPhotoProStudio {
       });
 
     document
+      .getElementById('btn-open-benchmark-suite')
+      ?.addEventListener('click', () => {
+        document.getElementById('modal-benchmark')?.classList.remove('hidden');
+        void this.previewSelectedBenchmarkScenario();
+      });
+
+    document
       .querySelectorAll<HTMLButtonElement>('[data-close-modal]')
       .forEach((btn) => {
         btn.addEventListener('click', () => {
@@ -1176,6 +1855,82 @@ class FormPhotoProStudio {
             document
               .getElementById(`modal-${target}`)
               ?.classList.add('hidden');
+          }
+        });
+      });
+
+    // Benchmark modal events
+    document
+      .querySelectorAll<HTMLButtonElement>('.bench-scenario-btn')
+      .forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.scenarioId as BenchmarkScenarioId;
+          if (id) {
+            this.selectedBenchmarkScenario = id;
+            document
+              .querySelectorAll<HTMLButtonElement>('.bench-scenario-btn')
+              .forEach((b) => {
+                const active = b.dataset.scenarioId === id;
+                b.className = `bench-scenario-btn text-left p-2.5 rounded-xl border transition flex flex-col justify-between ${
+                  active
+                    ? 'm3-primary-container border-[var(--m3-primary)]'
+                    : 'm3-surface-2 hover:m3-surface-3 border-[var(--m3-outline-variant)]'
+                }`;
+              });
+            void this.previewSelectedBenchmarkScenario();
+          }
+        });
+      });
+
+    document
+      .getElementById('btn-bench-load-into-studio')
+      ?.addEventListener('click', () => {
+        document.getElementById('modal-benchmark')?.classList.add('hidden');
+        void this.loadBenchmarkScenarioIntoEditor(
+          this.selectedBenchmarkScenario
+        );
+      });
+
+    document
+      .getElementById('btn-bench-run-comparison')
+      ?.addEventListener('click', async () => {
+        const statusEl = document.getElementById('bench-status-label');
+        const runBtn = document.getElementById(
+          'btn-bench-run-comparison'
+        ) as HTMLButtonElement | null;
+        if (runBtn) runBtn.disabled = true;
+        try {
+          const comp = await runScenarioBenchmarkComparison(
+            this.selectedBenchmarkScenario,
+            (msg) => {
+              if (statusEl) statusEl.textContent = msg;
+            }
+          );
+          this.lastBenchmarkComparison = comp;
+          this.updateBenchmarkCompositeDisplays();
+        } finally {
+          if (runBtn) runBtn.disabled = false;
+        }
+      });
+
+    document
+      .querySelectorAll<HTMLButtonElement>('#bench-bg-switcher .bench-bg-btn')
+      .forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const key = btn.dataset.benchbg as BenchmarkBgKey;
+          if (key) {
+            this.benchmarkBgKey = key;
+            document
+              .querySelectorAll<HTMLButtonElement>(
+                '#bench-bg-switcher .bench-bg-btn'
+              )
+              .forEach((b) => {
+                const active = b.dataset.benchbg === key;
+                b.className = `bench-bg-btn px-2.5 py-1 rounded-lg text-[10px] font-mono font-bold ${
+                  active ? 'm3-primary' : 'm3-surface-1'
+                }`;
+              });
+            this.updateBenchmarkCompositeDisplays();
           }
         });
       });
@@ -1332,7 +2087,7 @@ class FormPhotoProStudio {
         });
       });
 
-    // Sliders: Zoom, Pan X, Pan Y, Rotation, Quality, Max KB, Edge Choke, Edge Feather, Sig Threshold
+    // Sliders: Zoom, Pan X, Pan Y, Rotation, Quality, Max KB, Edge Choke, Edge Feather, Sig Threshold, Brush Size
     const bindSlider = (id: string, onChange: (val: number) => void): void => {
       const el = document.getElementById(id) as HTMLInputElement | null;
       el?.addEventListener('input', () => {
@@ -1368,26 +2123,148 @@ class FormPhotoProStudio {
     bindSlider('slider-sig-threshold', (v) => {
       this.state.sigThreshold = v;
     });
+    bindSlider('slider-brush-size', (v) => {
+      this.brushSizePx = v;
+      const cursorRing = document.getElementById('brush-cursor-ring');
+      if (cursorRing) {
+        cursorRing.style.width = `${v}px`;
+        cursorRing.style.height = `${v}px`;
+      }
+    });
 
-    // Two-Tier Neural Engine Selector buttons
+    // Configurable Alpha Refinement Sliders & Toggles (Reversible without re-running neural inference)
+    bindSlider('slider-conf-low', (v) => {
+      updateAlphaRefinementConfig({ lowConfidenceCut: v });
+      const el = document.getElementById('val-conf-low');
+      if (el) el.textContent = String(v);
+    });
+    bindSlider('slider-conf-high', (v) => {
+      updateAlphaRefinementConfig({ highConfidenceCut: v });
+      const el = document.getElementById('val-conf-high');
+      if (el) el.textContent = String(v);
+    });
+    bindSlider('slider-speckle-cleanup', (v) => {
+      updateAlphaRefinementConfig({ speckleCleanupStrength: v });
+      const el = document.getElementById('val-speckle-cleanup');
+      if (el) el.textContent = `${v}%`;
+    });
+
+    const chkBypass = document.getElementById(
+      'chk-bypass-refinement'
+    ) as HTMLInputElement | null;
+    chkBypass?.addEventListener('change', () => {
+      updateAlphaRefinementConfig({ bypassRefinement: chkBypass.checked });
+      this.schedulePipelineUpdate(true);
+      this.showToast(
+        chkBypass.checked
+          ? 'Showing raw unrefined neural alpha mask.'
+          : 'Re-enabled 4-stage alpha refinement.'
+      );
+    });
+
+    document
+      .querySelectorAll<HTMLButtonElement>('#hole-fill-mode-group .hole-mode-btn')
+      .forEach((btn) => {
+        btn.addEventListener('click', () => {
+          const mode = btn.dataset.holemode as HoleFillMode;
+          if (mode) {
+            updateAlphaRefinementConfig({ holeFillMode: mode });
+            document
+              .querySelectorAll<HTMLButtonElement>(
+                '#hole-fill-mode-group .hole-mode-btn'
+              )
+              .forEach((b) => {
+                const active = b.dataset.holemode === mode;
+                b.className = `hole-mode-btn py-0.5 px-1 rounded text-[9px] font-bold transition ${
+                  active ? 'm3-primary' : 'm3-text-muted'
+                }`;
+              });
+            const hintEl = document.getElementById('val-hole-mode-hint');
+            if (hintEl) {
+              hintEl.textContent =
+                mode === 'smart'
+                  ? 'Preserves Arm Gaps'
+                  : mode === 'aggressive'
+                    ? 'Fills All Interior'
+                    : 'No Hole Fill';
+            }
+            this.schedulePipelineUpdate(true);
+          }
+        });
+      });
+
+    // Three-Engine Neural Selector buttons (RMBG-1.4 | MODNet | IMG.LY)
     const setNeuralTier = (tier: NeuralModelTier) => {
       this.neuralModelTier = tier;
       this.syncNeuralTierButtons();
-      this.triggerNeuralMattingIfNeeded();
+      this.triggerNeuralMattingIfNeeded(true);
       this.schedulePipelineUpdate(true);
     };
 
     document
-      .getElementById('btn-neural-tier-quint8')
-      ?.addEventListener('click', () => setNeuralTier('isnet_quint8'));
+      .getElementById('btn-neural-tier-rmbg')
+      ?.addEventListener('click', () => setNeuralTier('rmbg_14'));
     document
-      .getElementById('btn-neural-tier-fp16')
-      ?.addEventListener('click', () => setNeuralTier('isnet_fp16'));
+      .getElementById('btn-neural-tier-modnet')
+      ?.addEventListener('click', () => setNeuralTier('modnet'));
+    document
+      .getElementById('btn-neural-tier-imgly')
+      ?.addEventListener('click', () => setNeuralTier('imgly_medium'));
     document
       .getElementById('neural-progress-container')
       ?.addEventListener('click', () => {
-        this.triggerNeuralMattingIfNeeded();
+        this.triggerNeuralMattingIfNeeded(true);
       });
+
+    // Manual Touch-Up Brush Mode buttons (Off / Erase / Restore) + Undo / Redo / Reset / Mask Overlay
+    const setBrushMode = (mode: TouchUpBrushMode) => {
+      this.brushMode = mode;
+      this.syncBrushModeButtons();
+      if (mode !== 'off') {
+        this.showToast(
+          mode === 'erase'
+            ? 'Touch-Up Brush (Erase): Paint on canvas to erase stray background spots.'
+            : 'Touch-Up Brush (Restore): Paint on canvas to restore hair, glasses, or clothing.'
+        );
+      }
+    };
+
+    document
+      .getElementById('btn-brush-off')
+      ?.addEventListener('click', () => setBrushMode('off'));
+    document
+      .getElementById('btn-brush-erase')
+      ?.addEventListener('click', () => setBrushMode('erase'));
+    document
+      .getElementById('btn-brush-restore')
+      ?.addEventListener('click', () => setBrushMode('restore'));
+
+    document.getElementById('btn-brush-undo')?.addEventListener('click', () => {
+      if (undoAlphaBrushStroke()) {
+        this.schedulePipelineUpdate(true);
+      }
+    });
+    document.getElementById('btn-brush-redo')?.addEventListener('click', () => {
+      if (redoAlphaBrushStroke()) {
+        this.schedulePipelineUpdate(true);
+      }
+    });
+    document
+      .getElementById('btn-brush-reset')
+      ?.addEventListener('click', () => {
+        if (resetManualAlphaBrushEdits()) {
+          this.schedulePipelineUpdate(true);
+          this.showToast('Reset all manual brush strokes to clean neural mask.');
+        }
+      });
+
+    const chkMaskOverlay = document.getElementById(
+      'chk-mask-overlay'
+    ) as HTMLInputElement | null;
+    chkMaskOverlay?.addEventListener('change', () => {
+      this.state.showMaskOverlay = chkMaskOverlay.checked;
+      this.schedulePipelineUpdate(true);
+    });
 
     // Signature Ink Color Mode Toggle ("Original Blue/Black" vs "Pure Mono Black")
     const setSigInkMode = (mode: SigInkColorMode) => {
@@ -1424,6 +2301,7 @@ class FormPhotoProStudio {
       this.state.qualityPct = 90;
       this.state.bgChokePx = 0;
       this.state.bgFeather = 0;
+      this.brushMode = 'off';
       this.schedulePipelineUpdate(true);
       this.showToast('Reset crop and edge parameters.');
     });
@@ -1465,20 +2343,50 @@ class FormPhotoProStudio {
       this.syncViewModeLayout();
     });
 
-    // Direct drag-to-pan on the calibrated output frame
+    // Direct drag-to-pan OR Touch-Up Brush painting on the calibrated output frame
     const frameWrap = document.getElementById('calibrated-frame-wrap');
+    const cursorRing = document.getElementById('brush-cursor-ring');
+
+    frameWrap?.addEventListener('pointerenter', () => {
+      if (this.brushMode !== 'off' && this.state.mode === 'photo' && cursorRing) {
+        cursorRing.classList.remove('hidden');
+      }
+    });
+    frameWrap?.addEventListener('pointerleave', () => {
+      if (cursorRing) {
+        cursorRing.classList.add('hidden');
+      }
+    });
     frameWrap?.addEventListener('pointerdown', (e) => {
       this.isDraggingCanvas = true;
+      frameWrap.setPointerCapture(e.pointerId);
+      if (this.brushMode !== 'off' && this.state.mode === 'photo') {
+        beginAlphaBrushStroke();
+        this.applyTouchUpBrushAtPointer(e.clientX, e.clientY);
+        this.syncRuntimeDiagnosticsPanel();
+        return;
+      }
       this.dragStart = {
         x: e.clientX,
         y: e.clientY,
         offsetX: this.state.offsetX,
         offsetY: this.state.offsetY,
       };
-      frameWrap.setPointerCapture(e.pointerId);
     });
     frameWrap?.addEventListener('pointermove', (e) => {
+      if (cursorRing && this.brushMode !== 'off' && this.state.mode === 'photo') {
+        const rect = frameWrap.getBoundingClientRect();
+        cursorRing.style.left = `${e.clientX - rect.left}px`;
+        cursorRing.style.top = `${e.clientY - rect.top}px`;
+        cursorRing.style.width = `${this.brushSizePx}px`;
+        cursorRing.style.height = `${this.brushSizePx}px`;
+        cursorRing.classList.remove('hidden');
+      }
       if (!this.isDraggingCanvas) return;
+      if (this.brushMode !== 'off' && this.state.mode === 'photo') {
+        this.applyTouchUpBrushAtPointer(e.clientX, e.clientY);
+        return;
+      }
       const dx = e.clientX - this.dragStart.x;
       const dy = e.clientY - this.dragStart.y;
       this.state.offsetX = Math.max(
@@ -1493,6 +2401,7 @@ class FormPhotoProStudio {
     });
     frameWrap?.addEventListener('pointerup', () => {
       this.isDraggingCanvas = false;
+      this.syncRuntimeDiagnosticsPanel();
     });
 
     // Background Cutout toggle
@@ -1549,6 +2458,13 @@ class FormPhotoProStudio {
       this.schedulePipelineUpdate();
       this.triggerNeuralMattingIfNeeded();
     });
+
+    // Direct A4 Printable Sheet PDF Download button
+    document
+      .getElementById('btn-export-pdf-sheet')
+      ?.addEventListener('click', () => {
+        void this.handleExportA4PdfSheet();
+      });
 
     // Primary Export button at Top-Right Corner
     document
@@ -1639,16 +2555,45 @@ class FormPhotoProStudio {
   }
 
   private syncNeuralTierButtons(): void {
-    const btnQ8 = document.getElementById('btn-neural-tier-quint8');
-    const btnFp16 = document.getElementById('btn-neural-tier-fp16');
-    if (btnQ8 && btnFp16) {
-      const isQ8 = this.neuralModelTier === 'isnet_quint8';
-      btnQ8.className = `m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition ${
-        isQ8 ? 'm3-primary shadow-sm' : 'm3-text-muted hover:text-m3-text'
-      }`;
-      btnFp16.className = `m3-spring py-1 px-2 rounded-lg text-[10px] font-bold text-center transition ${
-        !isQ8 ? 'm3-primary shadow-sm' : 'm3-text-muted hover:text-m3-text'
-      }`;
+    const map: Record<NeuralModelTier, string> = {
+      rmbg_14: 'btn-neural-tier-rmbg',
+      modnet: 'btn-neural-tier-modnet',
+      imgly_medium: 'btn-neural-tier-imgly',
+    };
+    (Object.keys(map) as NeuralModelTier[]).forEach((tier) => {
+      const btn = document.getElementById(map[tier]);
+      if (btn) {
+        const active = this.neuralModelTier === tier;
+        btn.className = `m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition ${
+          active ? 'm3-primary shadow-sm' : 'm3-text-muted hover:text-m3-text'
+        }`;
+      }
+    });
+  }
+
+  private syncBrushModeButtons(): void {
+    const map: Record<TouchUpBrushMode, string> = {
+      off: 'btn-brush-off',
+      erase: 'btn-brush-erase',
+      restore: 'btn-brush-restore',
+    };
+    (Object.keys(map) as TouchUpBrushMode[]).forEach((mode) => {
+      const btn = document.getElementById(map[mode]);
+      if (btn) {
+        const active = this.brushMode === mode;
+        btn.className = `m3-spring py-1 px-1.5 rounded-lg text-[10px] font-bold text-center transition ${
+          active ? 'm3-primary shadow-sm' : 'm3-text-muted hover:text-m3-text'
+        }`;
+      }
+    });
+    const frameWrap = document.getElementById('calibrated-frame-wrap');
+    const cursorRing = document.getElementById('brush-cursor-ring');
+    if (frameWrap) {
+      frameWrap.style.cursor =
+        this.brushMode === 'off' ? 'grab' : 'crosshair';
+    }
+    if (cursorRing && this.brushMode === 'off') {
+      cursorRing.classList.add('hidden');
     }
   }
 
@@ -1657,6 +2602,7 @@ class FormPhotoProStudio {
     this.renderPresetChips();
     this.syncThemeButtons();
     this.syncNeuralTierButtons();
+    this.syncBrushModeButtons();
     this.syncDimensionInputsFromPx();
     this.syncViewModeLayout();
 
@@ -1691,7 +2637,6 @@ class FormPhotoProStudio {
       }`;
     }
 
-    // Minimized Portal Preset Pill
     const setText = (id: string, text: string) => {
       const el = document.getElementById(id);
       if (el) el.textContent = text;
@@ -1827,6 +2772,12 @@ class FormPhotoProStudio {
       this.state.bgFeather,
       `${this.state.bgFeather} px`
     );
+    setSliderAndText(
+      'slider-brush-size',
+      'val-brush-size',
+      this.brushSizePx,
+      `${this.brushSizePx}px`
+    );
 
     const tVal = (this.state.sigThreshold / 100).toFixed(2);
     setSliderAndText(
@@ -1913,7 +2864,8 @@ class FormPhotoProStudio {
           ? this.state.customBgColor
           : BG_TONE_HEX[this.state.bgTone];
       frameWrap.style.backgroundColor =
-        this.state.bgRemovalEnabled && this.state.bgTone !== 'alpha'
+        (this.state.bgRemovalEnabled || result.isPreClippedAlpha) &&
+        this.state.bgTone !== 'alpha'
           ? bgHex
           : 'transparent';
     }
@@ -1953,7 +2905,9 @@ class FormPhotoProStudio {
       sigMatting.classList.toggle('flex', isSig);
     }
     if (isSig || !this.state.bgRemovalEnabled) {
-      const canvasOverlay = document.getElementById('canvas-neural-loading-pill');
+      const canvasOverlay = document.getElementById(
+        'canvas-neural-loading-pill'
+      );
       if (canvasOverlay) {
         canvasOverlay.classList.add('hidden');
         canvasOverlay.classList.remove('flex');
@@ -2066,4 +3020,3 @@ if (document.readyState === 'loading') {
 } else {
   bootstrapFormPhotoApp();
 }
-

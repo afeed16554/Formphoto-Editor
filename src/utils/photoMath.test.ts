@@ -10,11 +10,13 @@ import {
   unitToPx,
 } from './photoMath';
 import {
-  rgbToLab,
-  labDistanceShadowAware,
-  processPortraitHighQualityCutout,
+  cleanRawNeuralAlphaMatte,
+  computeAlphaMatteDiagnostics,
+  computeLetterboxGeometry,
+  hasPreClippedTransparency,
   processSignatureAdaptiveInk,
   refineAlphaMatteAndDefringe,
+  unpadAndResizeAlphaBilinear,
 } from './bgRemoverCore';
 import { ADMISSION_PRESETS } from '../constants';
 import { TransformState } from '../types';
@@ -110,7 +112,175 @@ test('evaluatePortalCompliance passes 5/5 checks for valid BUET state', () => {
   assert.equal(res.allPassed, true);
 });
 
-test('refineAlphaMatteAndDefringe chokes (-2px) and expands (+2px) alpha mask and decontaminates halo', () => {
+test('hasPreClippedTransparency detects Samsung Gallery pre-clipped transparent PNGs vs opaque JPEGs', () => {
+  const width = 20;
+  const height = 20;
+  const opaqueRgba = new Uint8ClampedArray(width * height * 4);
+  for (let i = 0; i < width * height; i++) {
+    opaqueRgba[i * 4 + 3] = 255;
+  }
+  assert.equal(hasPreClippedTransparency(opaqueRgba, width, height), false);
+
+  const preClippedRgba = new Uint8ClampedArray(width * height * 4);
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+      const inCenter = x >= 5 && x <= 14 && y >= 4 && y <= 16;
+      preClippedRgba[idx] = 40;
+      preClippedRgba[idx + 1] = 60;
+      preClippedRgba[idx + 2] = 90;
+      preClippedRgba[idx + 3] = inCenter ? 255 : 0;
+    }
+  }
+  assert.equal(hasPreClippedTransparency(preClippedRgba, width, height), true);
+});
+
+test('computeLetterboxGeometry and unpadAndResizeAlphaBilinear preserve aspect ratio without distortion', () => {
+  const geo = computeLetterboxGeometry(600, 800, 1024);
+  assert.equal(geo.targetSize, 1024);
+  assert.equal(geo.scaledH, 1024);
+  assert.equal(geo.scaledW, 768);
+  assert.equal(geo.padLeft, 128);
+  assert.equal(geo.padTop, 0);
+
+  // Create a synthetic 16x16 model output with letterbox padding for a 6x8 source
+  const smallGeo = computeLetterboxGeometry(6, 8, 16);
+  const modelAlpha = new Uint8Array(16 * 16);
+  for (let y = 0; y < 16; y++) {
+    for (let x = 0; x < 16; x++) {
+      // Fill the active letterboxed region with 255, padding with 180 (to prove padding is ignored)
+      const inContent =
+        x >= smallGeo.padLeft && x < smallGeo.padLeft + smallGeo.scaledW;
+      modelAlpha[y * 16 + x] = inContent ? 255 : 180;
+    }
+  }
+  const unpadded = unpadAndResizeAlphaBilinear(
+    modelAlpha,
+    16,
+    16,
+    6,
+    8,
+    smallGeo
+  );
+  assert.equal(unpadded.length, 6 * 8);
+  for (let i = 0; i < unpadded.length; i++) {
+    assert.equal(unpadded[i], 255);
+  }
+});
+
+test('cleanRawNeuralAlphaMatte clamps wall noise to 0, solidifies shirt holes to 255, and removes stray islands', () => {
+  const width = 30;
+  const height = 30;
+  const rawAlpha = new Uint8Array(width * height);
+
+  // Faint background wall noise (alpha = 14) everywhere
+  rawAlpha.fill(14);
+
+  // Stray disconnected background island at top-left (2x2 pixels with alpha = 240)
+  rawAlpha[1 * width + 1] = 240;
+  rawAlpha[1 * width + 2] = 240;
+
+  // Main portrait silhouette in center (10..22, 8..25)
+  for (let y = 8; y <= 25; y++) {
+    for (let x = 10; x <= 22; x++) {
+      rawAlpha[y * width + x] = 235;
+    }
+  }
+
+  // Create an enclosed pinhole inside the shirt at (16, 16) with alpha = 0
+  rawAlpha[16 * width + 16] = 0;
+  rawAlpha[16 * width + 17] = 10;
+
+  const cleaned = cleanRawNeuralAlphaMatte(rawAlpha, width, height);
+
+  // Wall noise (< 18) must be clamped to 0
+  assert.equal(cleaned[0], 0);
+  // Disconnected small island must be removed
+  assert.equal(cleaned[1 * width + 1], 0);
+  // Interior pinhole inside shirt must be filled to 255
+  assert.equal(cleaned[16 * width + 16], 255);
+  assert.equal(cleaned[16 * width + 17], 255);
+  // Main subject interior is locked to 255
+  assert.equal(cleaned[14 * width + 15], 255);
+});
+
+test('cleanRawNeuralAlphaMatte smart hole-fill preserves genuine arm-torso background openings while filling dark-shirt defects', () => {
+  const width = 40;
+  const height = 40;
+  const rawAlpha = new Uint8Array(width * height);
+  const srcRgba = new Uint8ClampedArray(width * height * 4);
+
+  // Bright studio wall background (RGB = 220, 225, 235)
+  for (let i = 0; i < width * height; i++) {
+    srcRgba[i * 4] = 220;
+    srcRgba[i * 4 + 1] = 225;
+    srcRgba[i * 4 + 2] = 235;
+    srcRgba[i * 4 + 3] = 255;
+  }
+
+  // Dark shirt silhouette (8..32, 8..34) with dark fabric RGB = (15, 18, 22)
+  for (let y = 8; y <= 34; y++) {
+    for (let x = 8; x <= 32; x++) {
+      const i = y * width + x;
+      rawAlpha[i] = 245;
+      srcRgba[i * 4] = 15;
+      srcRgba[i * 4 + 1] = 18;
+      srcRgba[i * 4 + 2] = 22;
+    }
+  }
+
+  // Case 1: Small dark-shirt defect at (14..15, 14..15) where RGB is dark shirt (15, 18, 22)
+  for (let y = 14; y <= 15; y++) {
+    for (let x = 14; x <= 15; x++) {
+      rawAlpha[y * width + x] = 5;
+    }
+  }
+
+  // Case 2: Genuine enclosed arm-torso gap at (22..27, 20..26) where RGB matches the bright studio wall (220, 225, 235) and rawAlpha = 0
+  for (let y = 20; y <= 26; y++) {
+    for (let x = 22; x <= 27; x++) {
+      const i = y * width + x;
+      rawAlpha[i] = 0;
+      srcRgba[i * 4] = 220;
+      srcRgba[i * 4 + 1] = 225;
+      srcRgba[i * 4 + 2] = 235;
+    }
+  }
+
+  const smartCleaned = cleanRawNeuralAlphaMatte(rawAlpha, width, height, {
+    lowClamp: 18,
+    highClamp: 230,
+    sourceRgba: srcRgba,
+    holeFillMode: 'smart',
+  });
+
+  // Dark shirt defect is filled to 255
+  assert.equal(smartCleaned[14 * width + 14], 255);
+  // Genuine bright-wall opening between arm and torso stays 0 (transparent)
+  assert.equal(smartCleaned[23 * width + 24], 0);
+});
+
+test('computeAlphaMatteDiagnostics calculates IoU, Boundary F1, MAE, speckles, and holes', () => {
+  const width = 24;
+  const height = 24;
+  const gt = new Uint8Array(width * height);
+  const pred = new Uint8Array(width * height);
+
+  for (let y = 6; y <= 18; y++) {
+    for (let x = 6; x <= 18; x++) {
+      gt[y * width + x] = 255;
+      pred[y * width + x] = 255;
+    }
+  }
+
+  const diag = computeAlphaMatteDiagnostics(pred, width, height, gt);
+  assert.equal(diag.backgroundSpeckleCount, 0);
+  assert.equal(diag.foregroundHoleCount, 0);
+  assert.equal(diag.iouPct, 100);
+  assert.equal(diag.maePct, 0);
+});
+
+test('refineAlphaMatteAndDefringe chokes (-1px) and expands (+1px) boundary while locking deep interior to 255', () => {
   const width = 20;
   const height = 20;
   const rgba = new Uint8ClampedArray(width * height * 4);
@@ -122,7 +292,6 @@ test('refineAlphaMatteAndDefringe chokes (-2px) and expands (+2px) alpha mask an
       const idx = i * 4;
       const inSquare = x >= 5 && x <= 14 && y >= 5 && y <= 14;
       baseMask[i] = inSquare ? 255 : 0;
-      // Interior is dark hair (20,20,25), border has bright halo (240,240,240)
       const isBorder =
         inSquare && (x === 5 || x === 14 || y === 5 || y === 14);
       rgba[idx] = isBorder ? 240 : 20;
@@ -132,17 +301,15 @@ test('refineAlphaMatteAndDefringe chokes (-2px) and expands (+2px) alpha mask an
     }
   }
 
-  // Choke by -1px with 0 feather: border at x=5, y=10 should become transparent (alpha=0)
   const chokedRgba = new Uint8ClampedArray(rgba);
   refineAlphaMatteAndDefringe(chokedRgba, baseMask, width, height, -1, 0);
   assert.equal(chokedRgba[(10 * width + 5) * 4 + 3], 0);
-  // Deep interior at x=10, y=10 remains opaque (alpha=255)
   assert.equal(chokedRgba[(10 * width + 10) * 4 + 3], 255);
 
-  // Expand by +1px with 0 feather: outside neighbor at x=4, y=10 becomes opaque (alpha=255)
   const expandedRgba = new Uint8ClampedArray(rgba);
   refineAlphaMatteAndDefringe(expandedRgba, baseMask, width, height, 1, 0);
   assert.equal(expandedRgba[(10 * width + 4) * 4 + 3], 255);
+  assert.equal(expandedRgba[(10 * width + 10) * 4 + 3], 255);
 });
 
 test('processSignatureAdaptiveInk (Bradley-Roth w=24, t=0.14) isolates blue/black ink and removes shadow', () => {
@@ -155,13 +322,11 @@ test('processSignatureAdaptiveInk (Bradley-Roth w=24, t=0.14) isolates blue/blac
       const idx = (y * width + x) * 4;
       const isInk = y === 12 && x >= 8 && x <= 40;
       if (isInk) {
-        // Royal blue ballpoint pen ink
         dataOrig[idx] = 20;
         dataOrig[idx + 1] = 45;
         dataOrig[idx + 2] = 175;
         dataOrig[idx + 3] = 255;
       } else {
-        // Strong phone shadow gradient across paper (245 on left down to 135 on right)
         const paper = 245 - Math.floor((x / width) * 110);
         dataOrig[idx] = paper;
         dataOrig[idx + 1] = paper;
@@ -173,61 +338,17 @@ test('processSignatureAdaptiveInk (Bradley-Roth w=24, t=0.14) isolates blue/blac
 
   const dataMono = new Uint8ClampedArray(dataOrig);
 
-  // 1. Test Preserve Original Blue/Black Ink ('original') with w=24, t=0.14 (14)
   processSignatureAdaptiveInk(dataOrig, width, height, true, 14, 'original', 24);
   const shadowPaperIdx = (3 * width + 44) * 4;
-  assert.equal(dataOrig[shadowPaperIdx + 3], 0); // Phone shadow on paper cleanly removed
+  assert.equal(dataOrig[shadowPaperIdx + 3], 0);
   const inkIdx = (12 * width + 24) * 4;
-  assert.ok(dataOrig[inkIdx + 3] > 200); // Thin pen stroke preserved
-  assert.ok(dataOrig[inkIdx + 2] > dataOrig[inkIdx] + 40); // Blue ink channel remains distinctly blue
+  assert.ok(dataOrig[inkIdx + 3] > 200);
+  assert.ok(dataOrig[inkIdx + 2] > dataOrig[inkIdx] + 40);
 
-  // 2. Test Pure Monochrome Black ('mono')
   processSignatureAdaptiveInk(dataMono, width, height, true, 14, 'mono', 24);
   assert.equal(dataMono[shadowPaperIdx + 3], 0);
   assert.ok(dataMono[inkIdx + 3] > 200);
   assert.equal(dataMono[inkIdx], 10);
   assert.equal(dataMono[inkIdx + 1], 12);
   assert.equal(dataMono[inkIdx + 2], 16);
-});
-
-test('processPortraitHighQualityCutout removes background while preserving center subject', () => {
-  const width = 40;
-  const height = 40;
-  const data = new Uint8ClampedArray(width * height * 4);
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      const idx = (y * width + x) * 4;
-      const dx = x - 20;
-      const dy = y - 22;
-      const isSubject = dx * dx + dy * dy <= 100;
-      if (isSubject) {
-        data[idx] = 35;
-        data[idx + 1] = 45;
-        data[idx + 2] = 75;
-        data[idx + 3] = 255;
-      } else {
-        data[idx] = 225 - Math.floor(y * 0.4);
-        data[idx + 1] = 230 - Math.floor(y * 0.4);
-        data[idx + 2] = 238 - Math.floor(y * 0.4);
-        data[idx + 3] = 255;
-      }
-    }
-  }
-
-  processPortraitHighQualityCutout(data, width, height, 36, 1.5, 0);
-
-  const cornerIdx = (1 * width + 1) * 4;
-  assert.equal(data[cornerIdx + 3], 0);
-
-  const centerIdx = (22 * width + 20) * 4;
-  assert.equal(data[centerIdx + 3], 255);
-});
-
-test('rgbToLab and labDistanceShadowAware compute perceptual distances', () => {
-  const white = rgbToLab(250, 250, 250);
-  const shadowedWhite = rgbToLab(215, 215, 215);
-  const darkHair = rgbToLab(25, 22, 20);
-  const distShadow = labDistanceShadowAware(white, shadowedWhite);
-  const distHair = labDistanceShadowAware(white, darkHair);
-  assert.ok(distShadow < distHair);
 });

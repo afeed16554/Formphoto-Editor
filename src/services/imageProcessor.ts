@@ -16,6 +16,7 @@ export interface ProcessedExportResult {
   qualityUsed: number;
   hasSourceImage: boolean;
   usedNeuralMatte: boolean;
+  isPreClippedAlpha: boolean;
 }
 
 /**
@@ -31,6 +32,75 @@ export function loadImageElement(src: string): Promise<HTMLImageElement> {
     img.onerror = (err) => reject(err);
     img.src = src;
   });
+}
+
+/**
+ * Maps a pointer position `(normOutX, normOutY)` in `[0, 1]` on the output canvas
+ * back to normalized `(normSrcX, normSrcY)` in `[0, 1]` on the source image,
+ * accounting for pan (`offsetX`, `offsetY`), rotation (`rotationDeg`), zoom (`scalePct`),
+ * flip, and aspect-ratio fitting.
+ */
+export function mapOutputPointToSourceNormalized(
+  normOutX: number,
+  normOutY: number,
+  srcW: number,
+  srcH: number,
+  outWidth: number,
+  outHeight: number,
+  state: TransformState
+): { normX: number; normY: number } | null {
+  const pxX = normOutX * outWidth;
+  const pxY = normOutY * outHeight;
+
+  const centerX = outWidth / 2 + (state.offsetX / 300) * outWidth;
+  const centerY = outHeight / 2 + (state.offsetY / 350) * outHeight;
+
+  let dx = pxX - centerX;
+  let dy = pxY - centerY;
+
+  const rad = (-state.rotationDeg * Math.PI) / 180;
+  const cos = Math.cos(rad);
+  const sin = Math.sin(rad);
+  const rX = dx * cos - dy * sin;
+  const rY = dx * sin + dy * cos;
+
+  const scale = Math.max(0.05, state.scalePct / 100);
+  const scaleX = state.flipH ? -scale : scale;
+  const scaleY = state.flipV ? -scale : scale;
+
+  const localX = rX / scaleX;
+  const localY = rY / scaleY;
+
+  const imgAspect = srcW / Math.max(1, srcH);
+  const boxAspect = outWidth / Math.max(1, outHeight);
+  let drawW = outWidth;
+  let drawH = outHeight;
+
+  if (state.mode === 'signature') {
+    if (imgAspect > boxAspect) {
+      drawW = outWidth * 0.94;
+      drawH = drawW / imgAspect;
+    } else {
+      drawH = outHeight * 0.88;
+      drawW = drawH * imgAspect;
+    }
+  } else {
+    if (imgAspect > boxAspect) {
+      drawH = outHeight;
+      drawW = outHeight * imgAspect;
+    } else {
+      drawW = outWidth;
+      drawH = outWidth / imgAspect;
+    }
+  }
+
+  const u = (localX + drawW / 2) / Math.max(1, drawW);
+  const v = (localY + drawH / 2) / Math.max(1, drawH);
+
+  if (u < 0 || u > 1 || v < 0 || v > 1) {
+    return null;
+  }
+  return { normX: u, normY: v };
 }
 
 /**
@@ -97,14 +167,11 @@ function drawAlignedToOutputCanvas(
 
 /**
  * Renders the current TransformState onto an offscreen HTML5 canvas:
- * - In Photo mode with bgRemovalEnabled:
- *   - Uses ONLY the cached transparent PNG `ImageBitmap` from `@imgly/background-removal@1.7.0`
- *     (never custom RGB/LAB pixel-thresholding math).
- *   - When Choke = 0 and Feather = 0, draws the cached `ImageBitmap` directly onto the output
- *     canvas at 60fps.
- *   - When Edge Choke (-2px..+2px) or Edge Feather (0px..3px) is non-zero, refines the cached
- *     neural alpha matte before compositing onto the solid White (#ffffff), Sky Blue (#38bdf8),
- *     or Custom admission backdrop.
+ * - In Photo mode with bgRemovalEnabled OR a Pre-Clipped Transparent PNG (`isPreClippedAlpha`):
+ *   - Uses ONLY the cached neural matte or pre-clipped PNG alpha channel (never custom RGB/LAB pixel math).
+ *   - Always renders the selected Backdrop Fill color (Pure White `#ffffff`, Sky Blue `#38bdf8`, Grey, or Custom)
+ *     so transparent PNGs never turn black when exported to JPG.
+ *   - Applies boundary-only Edge Choke (-2px..+2px) and Edge Feather (0px..3px) only to the 3px outer silhouette boundary.
  * - In Signature mode: runs O(N) Bradley-Roth Integral-Image Local Adaptive Thresholding
  *   (w = 24, t = 0.14) with "Preserve Original Blue/Black Ink vs. Pure Monochrome Black".
  */
@@ -133,6 +200,7 @@ export function renderProcessedOutput(
       qualityUsed: state.qualityPct,
       hasSourceImage: false,
       usedNeuralMatte: false,
+      isPreClippedAlpha: false,
     };
   }
 
@@ -150,13 +218,14 @@ export function renderProcessedOutput(
       qualityUsed: state.qualityPct,
       hasSourceImage: false,
       usedNeuralMatte: false,
+      isPreClippedAlpha: false,
     };
   }
 
   const bgHex =
     state.bgTone === 'custom' ? state.customBgColor : BG_TONE_HEX[state.bgTone];
 
-  // Fill studio background unless transparent PNG/WebP
+  // Fill studio background (White #ffffff, Sky Blue #38bdf8, etc.) unless transparent PNG/WebP is explicitly selected
   if (bgHex !== 'transparent' || state.format === 'image/jpeg') {
     ctx.fillStyle = bgHex === 'transparent' ? '#ffffff' : bgHex;
     ctx.fillRect(0, 0, outWidth, outHeight);
@@ -165,6 +234,11 @@ export function renderProcessedOutput(
   }
 
   let usedNeuralMatte = false;
+  const isPreClippedAlpha = Boolean(
+    neuralMatte &&
+      neuralMatte.sourceSrc === sourceImage.src &&
+      neuralMatte.isPreClippedAlpha
+  );
 
   if (state.mode === 'signature') {
     // Signature Mode: O(N) Bradley-Roth Integral-Image Adaptive Thresholding
@@ -196,78 +270,28 @@ export function renderProcessedOutput(
       ctx.drawImage(workCanvas, 0, 0);
     }
   } else if (
-    state.bgRemovalEnabled &&
     neuralMatte &&
-    neuralMatte.sourceSrc === sourceImage.src
+    neuralMatte.sourceSrc === sourceImage.src &&
+    (state.bgRemovalEnabled || neuralMatte.isPreClippedAlpha)
   ) {
-    // Photo Mode with Cached Neural ImageBitmap from @imgly/background-removal@1.7.0
+    // Photo Mode with Cached Neural Matte OR Pre-Clipped Transparent PNG
     usedNeuralMatte = true;
     const chokePx = state.bgChokePx ?? 0;
     const featherPx = state.bgFeather ?? 0;
 
     if (chokePx === 0 && featherPx === 0) {
-      // Fast 60fps direct GPU composite of cached transparent PNG ImageBitmap
+      // Fast 60fps direct GPU composite of cached maskCanvas / ImageBitmap over the Backdrop Fill
       drawAlignedToOutputCanvas(
         ctx,
-        neuralMatte.imageBitmap,
+        neuralMatte.maskCanvas,
         neuralMatte.width,
         neuralMatte.height,
         outWidth,
         outHeight,
         state
       );
-    } else if (chokePx === 0 && featherPx > 0) {
-      // Fast 60fps canvas-filtered feather or refined alpha composite using cached ImageBitmap
-      const workCanvas = document.createElement('canvas');
-      workCanvas.width = outWidth;
-      workCanvas.height = outHeight;
-      const workCtx = workCanvas.getContext('2d');
-      if (workCtx) {
-        drawAlignedToOutputCanvas(
-          workCtx,
-          sourceImage,
-          sourceImage.naturalWidth,
-          sourceImage.naturalHeight,
-          outWidth,
-          outHeight,
-          state
-        );
-        const imgData = workCtx.getImageData(0, 0, outWidth, outHeight);
-
-        const maskWork = document.createElement('canvas');
-        maskWork.width = outWidth;
-        maskWork.height = outHeight;
-        const maskCtx = maskWork.getContext('2d');
-        if (maskCtx) {
-          drawAlignedToOutputCanvas(
-            maskCtx,
-            neuralMatte.imageBitmap,
-            neuralMatte.width,
-            neuralMatte.height,
-            outWidth,
-            outHeight,
-            state
-          );
-          const maskImgData = maskCtx.getImageData(0, 0, outWidth, outHeight);
-          const numPixels = outWidth * outHeight;
-          const baseAlpha = new Uint8Array(numPixels);
-          for (let i = 0; i < numPixels; i++) {
-            baseAlpha[i] = maskImgData.data[i * 4 + 3];
-          }
-          refineAlphaMatteAndDefringe(
-            imgData.data,
-            baseAlpha,
-            outWidth,
-            outHeight,
-            0,
-            featherPx
-          );
-          workCtx.putImageData(imgData, 0, 0);
-        }
-        ctx.drawImage(workCanvas, 0, 0);
-      }
     } else {
-      // Edge Choke / Defringe (-2px to +2px) + Feather (0px to 3px) refinement on cached neural matte
+      // Boundary-Only Edge Choke / Defringe (-2px to +2px) + Feather (0px to 3px)
       const workCanvas = document.createElement('canvas');
       workCanvas.width = outWidth;
       workCanvas.height = outHeight;
@@ -291,7 +315,7 @@ export function renderProcessedOutput(
         if (maskCtx) {
           drawAlignedToOutputCanvas(
             maskCtx,
-            neuralMatte.imageBitmap,
+            neuralMatte.maskCanvas,
             neuralMatte.width,
             neuralMatte.height,
             outWidth,
@@ -319,7 +343,7 @@ export function renderProcessedOutput(
     }
   } else {
     // Photo Mode with BG Cutout OFF or while neural segmentation is actively downloading/computing:
-    // Draw aligned original sourceImage cleanly (NEVER run custom RGB pixel-thresholding math)
+    // Draw aligned original sourceImage over the filled canvas (never run custom RGB pixel math)
     drawAlignedToOutputCanvas(
       ctx,
       sourceImage,
@@ -329,6 +353,58 @@ export function renderProcessedOutput(
       outHeight,
       state
     );
+  }
+
+  // Optional visible Alpha Mask Overlay for inspecting matte quality & manual brush touch-ups
+  if (
+    state.showMaskOverlay &&
+    state.mode === 'photo' &&
+    neuralMatte &&
+    neuralMatte.sourceSrc === sourceImage.src
+  ) {
+    const maskWork = document.createElement('canvas');
+    maskWork.width = outWidth;
+    maskWork.height = outHeight;
+    const maskCtx = maskWork.getContext('2d');
+    if (maskCtx) {
+      drawAlignedToOutputCanvas(
+        maskCtx,
+        neuralMatte.maskCanvas,
+        neuralMatte.width,
+        neuralMatte.height,
+        outWidth,
+        outHeight,
+        state
+      );
+      const maskData = maskCtx.getImageData(0, 0, outWidth, outHeight).data;
+      const outImgData = ctx.getImageData(0, 0, outWidth, outHeight);
+      const outPixels = outImgData.data;
+      const total = outWidth * outHeight;
+      for (let i = 0; i < total; i++) {
+        const idx = i * 4;
+        const a = maskData[idx + 3];
+        if (a < 20) {
+          // Background region: tint translucent ruby red so stray speckles or erased zones stand out
+          outPixels[idx] = Math.round(outPixels[idx] * 0.45 + 225 * 0.55);
+          outPixels[idx + 1] = Math.round(outPixels[idx + 1] * 0.45 + 29 * 0.55);
+          outPixels[idx + 2] = Math.round(outPixels[idx + 2] * 0.45 + 72 * 0.55);
+          outPixels[idx + 3] = 255;
+        } else if (a < 235) {
+          // Soft transition feather edge: tint sky cyan
+          outPixels[idx] = Math.round(outPixels[idx] * 0.4 + 56 * 0.6);
+          outPixels[idx + 1] = Math.round(outPixels[idx + 1] * 0.4 + 189 * 0.6);
+          outPixels[idx + 2] = Math.round(outPixels[idx + 2] * 0.4 + 248 * 0.6);
+          outPixels[idx + 3] = 255;
+        } else {
+          // Solid foreground silhouette: subtle emerald highlight
+          outPixels[idx] = Math.round(outPixels[idx] * 0.84 + 16 * 0.16);
+          outPixels[idx + 1] = Math.round(outPixels[idx + 1] * 0.84 + 185 * 0.16);
+          outPixels[idx + 2] = Math.round(outPixels[idx + 2] * 0.84 + 129 * 0.16);
+          outPixels[idx + 3] = 255;
+        }
+      }
+      ctx.putImageData(outImgData, 0, 0);
+    }
   }
 
   // Encode and binary-search quality to respect targetCapKb
@@ -372,6 +448,7 @@ export function renderProcessedOutput(
     qualityUsed: Math.round(bestQuality * 100),
     hasSourceImage: true,
     usedNeuralMatte,
+    isPreClippedAlpha,
   };
 }
 

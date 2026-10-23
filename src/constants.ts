@@ -4,6 +4,8 @@ export const BG_TONE_HEX: Record<BgToneKey, string> = {
   blue: '#38bdf8',
   white: '#ffffff',
   grey: '#e2e8f0',
+  black: '#000000',
+  midgrey: '#808080',
   alpha: 'transparent',
   custom: '#dbeafe',
 };

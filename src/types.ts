@@ -10,7 +10,14 @@ export type ViewMode = 'single' | 'dual' | 'split';
 
 export type ThemeKey = 'oled' | 'warm' | 'light' | 'gray';
 
-export type BgToneKey = 'blue' | 'white' | 'grey' | 'alpha' | 'custom';
+export type BgToneKey =
+  | 'blue'
+  | 'white'
+  | 'grey'
+  | 'black'
+  | 'midgrey'
+  | 'alpha'
+  | 'custom';
 
 export type SigInkColorMode = 'original' | 'mono';
 
@@ -66,6 +73,7 @@ export interface TransformState {
   viewMode: ViewMode;
   zoomPct: number;
   showGrid: boolean;
+  showMaskOverlay?: boolean;
   splitPositionPct: number;
   theme: ThemeKey;
 }
