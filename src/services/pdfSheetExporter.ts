@@ -128,7 +128,9 @@ export async function downloadA4PrintableSheetPdf(
   // Encode sheet as high-quality JPEG and wrap in a standard A4 PDF 1.4 document
   const jpegDataUrl = sheetCanvas.toDataURL('image/jpeg', 0.94);
   const pdfBytes = buildSinglePageJpegA4Pdf(jpegDataUrl, a4W, a4H);
-  const blob = new Blob([pdfBytes], { type: 'application/pdf' });
+  const blob = new Blob([pdfBytes as unknown as BlobPart], {
+    type: 'application/pdf',
+  });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

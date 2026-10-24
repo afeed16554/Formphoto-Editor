@@ -74,13 +74,19 @@
         s.src = './app.bundle.js';
         document.body.appendChild(s);
       };
-      window.addEventListener('DOMContentLoaded', function () {
+      // If TypeScript module fails to load (e.g. GitHub Pages static file server without Vite), fallback to app.bundle.js
+      window.addEventListener('error', function (e) {
+        if (e.target && e.target.src && e.target.src.indexOf('src/index.ts') !== -1) {
+          window.__loadStaticBundle();
+        }
+      }, true);
+      window.addEventListener('load', function () {
         setTimeout(function () {
           var root = document.getElementById('root');
           if (!window.__FORMPHOTO_MOUNTED__ && (!root || root.children.length === 0)) {
             window.__loadStaticBundle();
           }
-        }, 60);
+        }, 800);
       });
     </script>
     <script
